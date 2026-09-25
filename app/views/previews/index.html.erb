@@ -1,0 +1,24 @@
+<% content_for :page_title, "Previews" %>
+
+<%= render "govuk_publishing_components/components/heading", text: "Previews", heading_level: 1, margin_bottom: 6 %>
+
+<%= render "govuk_publishing_components/components/button", text: "New preview", href: new_preview_path %>
+
+<%= render "govuk_publishing_components/components/table", {
+  head: [
+    { text: "App" },
+    { text: "Branch" },
+    { text: "Status" },
+    { text: "URL" },
+    { text: "" },
+  ],
+  rows: @previews.map do |preview|
+    [
+      { text: preview.app_name },
+      { text: preview.branch },
+      { text: render("govuk_publishing_components/components/tag", text: preview.status) },
+      { text: preview.running? ? link_to(preview.hostname, "https://#{preview.hostname}") : "" },
+      { text: button_to("Delete", preview_path(preview), method: :delete, class: "govuk-button govuk-button--warning govuk-!-margin-bottom-0", data: { confirm: "Are you sure?" }) },
+    ]
+  end,
+} %>

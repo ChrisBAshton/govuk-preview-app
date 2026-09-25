@@ -1,0 +1,8 @@
+# The GOV.UK apps that App Preview knows how to build and run previews for.
+#
+# This is a small manifest owned by App Preview itself (not a file each
+# previewable app's own repo has to carry). Extend this as support for more
+# apps and their dependencies (e.g. Whitehall -> Publishing API) is added.
+frontend:
+  repo_url: https://github.com/alphagov/frontend.git
+  port_env_var: PORT
