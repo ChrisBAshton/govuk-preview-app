@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "Jenkinsfile"
+      - ".git**"
+  pull_request:
+
+jobs:
+  codeql-sast:
+    name: CodeQL SAST scan
+    uses: alphagov/govuk-infrastructure/.github/workflows/codeql-analysis.yml@main
+    permissions:
+      security-events: write
+
+  dependency-review:
+    name: Dependency Review scan
+    uses: alphagov/govuk-infrastructure/.github/workflows/dependency-review.yml@main
+
+  security-analysis:
+    name: Security Analysis
+    uses: alphagov/govuk-infrastructure/.github/workflows/brakeman.yml@main
+    secrets: inherit
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+  lint-ruby:
+    name: Lint Ruby
+    uses: alphagov/govuk-infrastructure/.github/workflows/rubocop.yml@main
+
+  test-ruby:
+    name: Test Ruby
+    uses: ./.github/workflows/rspec.yml

@@ -1,0 +1,34 @@
+<% environment = GovukPublishingComponents::AppHelpers::Environment.current_acceptance_environment %>
+
+<%= render "govuk_publishing_components/components/layout_for_admin",
+    product_name: "App Preview",
+    environment: environment,
+    browser_title: yield(:page_title) do %>
+
+  <%= render "govuk_publishing_components/components/skip_link" %>
+
+  <%= render "govuk_publishing_components/components/layout_header", {
+    product_name: "App Preview",
+    environment: environment,
+    navigation_items: [
+      {
+        text: "Previews",
+        href: previews_path,
+        active: request.path.start_with?(previews_path),
+      },
+    ],
+  } %>
+
+  <div class="govuk-width-container">
+    <%= yield(:back_link) %>
+
+    <main class="govuk-main-wrapper" id="main-content" role="main">
+      <%= render "govuk_publishing_components/components/success_alert", message: flash[:notice] if flash[:notice] %>
+      <%= render "govuk_publishing_components/components/error_alert", message: flash[:alert] if flash[:alert] %>
+
+      <%= yield %>
+    </main>
+  </div>
+
+  <%= render "govuk_publishing_components/components/layout_footer" %>
+<% end %>
