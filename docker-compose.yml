@@ -1,0 +1,98 @@
+name: govuk-app-preview
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  redis:
+    image: redis
+
+  # Only this service declares `build:` - app/worker below reference the
+  # same tag without building it themselves, so there's exactly one build
+  # of the Dockerfile rather than three racing to build it concurrently.
+  migrate:
+    build: .
+    image: govuk-app-preview
+    user: root
+    command: bash -c "bin/rails db:prepare && bin/rails db:seed"
+    environment: &app_env
+      DATABASE_URL: postgres://postgres@postgres/govuk_app_preview_development
+      REDIS_URL: redis://redis
+      GOVUK_APP_DOMAIN: dev.gov.uk
+      GOVUK_APP_DOMAIN_EXTERNAL: dev.gov.uk
+      # The image runs in RAILS_ENV=production by default (see below), but
+      # gds-sso's own mock-vs-real auth strategy defaults off Rails.env too -
+      # this env var (gds-sso's own escape hatch) overrides that specifically,
+      # without needing RAILS_ENV=development (which would need the
+      # :development/:test gem group this production-style image doesn't
+      # install).
+      GDS_SSO_STRATEGY: mock
+      # The docker.io (apt) CLI defaults to the legacy builder, which can't
+      # handle $TARGETPLATFORM (a BuildKit-only build arg) - and most GOV.UK
+      # apps' own Dockerfiles use it. DockerRunner's `docker build` calls
+      # inherit this.
+      DOCKER_BUILDKIT: 1
+      # Not a real secret - fixed so cookies survive a container restart in
+      # dev; the base image defaults to RAILS_ENV=production, which requires
+      # this to be set at all just to boot.
+      SECRET_KEY_BASE: 7ede6f11e4d21043e035b427884d36bcd4afe0bd7e5fa1eb77ad66349c2a7c01
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    image: govuk-app-preview
+    # Needs to read/write the mounted Docker socket below, which this
+    # host's app user (uid 1001 in the image) can't - see the plan notes.
+    user: root
+    command: bash -c "bin/rails db:prepare && bin/rails db:seed && bin/rails s"
+    environment: *app_env
+    volumes:
+      # A bind mount, not a named volume: DockerRunner builds/runs containers
+      # via the *host's* Docker daemon (socket mounted below), so checkouts
+      # have to live at a path the host can also resolve - a named volume's
+      # storage path wouldn't mean anything to the host daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./tmp/checkouts:/app/tmp/checkouts
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    expose:
+      - "3000"
+
+  worker:
+    image: govuk-app-preview
+    user: root
+    command: bundle exec sidekiq -C ./config/sidekiq.yml
+    environment: *app_env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./tmp/checkouts:/app/tmp/checkouts
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "${APP_PREVIEW_NGINX_PORT:-80}:80"
+    depends_on:
+      - app
+
+volumes:
+  postgres-data:

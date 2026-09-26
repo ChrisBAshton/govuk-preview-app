@@ -15,20 +15,16 @@
 /config/credentials/*.key
 
 # Ignore all logfiles and tempfiles.
+# /app/tmp is a symlink to /tmp in the base image - excluding the whole
+# directory (not just its contents) avoids COPY trying to write a real
+# directory over that symlink.
 /log/*
-/tmp/*
+/tmp
 !/log/.keep
-!/tmp/.keep
-
-# Ignore pidfiles, but keep the directory.
-/tmp/pids/*
-!/tmp/pids/.keep
 
 # Ignore storage (uploaded files in development and any SQLite databases).
 /storage/*
 !/storage/.keep
-/tmp/storage/*
-!/tmp/storage/.keep
 
 # Ignore assets.
 /node_modules/
