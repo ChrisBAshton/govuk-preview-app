@@ -1,4 +1,5 @@
 require "open3"
+require "securerandom"
 
 class DockerRunner
   class DockerError < StandardError; end
@@ -22,13 +23,11 @@ class DockerRunner
   end
 
   def start!
-    port_env_var = GovukApps.find(preview.app_name).port_env_var
-
     container_id, = run!(
       "docker", "run", "-d",
       "--name", container_name,
       "-p", "#{preview.port}:#{preview.port}",
-      "-e", "#{port_env_var}=#{preview.port}",
+      *env_args,
       image_tag
     )
 
@@ -51,6 +50,20 @@ class DockerRunner
   end
 
 private
+
+  # SECRET_KEY_BASE is needed for any Rails app to boot at all in production
+  # mode (which the base GOV.UK Docker images run in by default) - it's not
+  # app-specific, so every preview container gets its own random one. Beyond
+  # that, each app's manifest entry can declare a fixed set of extra env vars
+  # (e.g. pointing an app's Plek-resolved dependencies at real GOV.UK
+  # services) - see config/govuk_apps.yml.
+  def env_args
+    app = GovukApps.find(preview.app_name)
+
+    env = { app.port_env_var => preview.port, "SECRET_KEY_BASE" => SecureRandom.hex(32) }.merge(app.env)
+
+    env.flat_map { |key, value| ["-e", "#{key}=#{value}"] }
+  end
 
   def run!(*command)
     out, err, status = Open3.capture3(*command)

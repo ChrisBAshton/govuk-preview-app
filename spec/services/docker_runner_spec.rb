@@ -36,17 +36,40 @@ RSpec.describe DockerRunner do
   end
 
   describe "#start!" do
-    it "runs the built image with the preview's port and app-specific port env var" do
+    it "runs the built image with the preview's port, a random secret key base, and the app's declared env" do
       allow(Open3).to receive(:capture3).and_return(["abc123\n", "", success])
 
       expect(runner.start!).to eq("abc123")
-      expect(Open3).to have_received(:capture3).with(
-        "docker", "run", "-d",
-        "--name", runner.container_name,
-        "-p", "20123:20123",
-        "-e", "PORT=20123",
-        runner.image_tag
-      )
+      expect(Open3).to have_received(:capture3) do |*args|
+        expect(args[0..3]).to eq(["docker", "run", "-d", "--name"])
+        expect(args[4]).to eq(runner.container_name)
+        expect(args[5..6]).to eq(["-p", "20123:20123"])
+        expect(args.last).to eq(runner.image_tag)
+
+        env_section = args[7...-1]
+        expect(env_section.each_slice(2).map(&:first).uniq).to eq(["-e"])
+        env = env_section.each_slice(2).to_h { |_flag, kv| kv.split("=", 2) }
+        expect(env["PORT"]).to eq("20123")
+        expect(env["SECRET_KEY_BASE"]).to match(/\A[0-9a-f]{64}\z/)
+        expect(env["PLEK_SERVICE_CONTENT_STORE_URI"]).to eq("https://www.gov.uk/api")
+      end
+    end
+
+    it "generates a different secret key base for each container" do
+      calls = []
+      allow(Open3).to receive(:capture3) do |*args|
+        calls << args
+        ["abc123\n", "", success]
+      end
+
+      runner.start!
+      runner.start!
+
+      secret_key_bases = calls.map do |args|
+        env = args[7...-1].each_slice(2).to_h { |_flag, kv| kv.split("=", 2) }
+        env["SECRET_KEY_BASE"]
+      end
+      expect(secret_key_bases.uniq.size).to eq(2)
     end
   end
 

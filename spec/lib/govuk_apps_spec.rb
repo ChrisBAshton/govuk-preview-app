@@ -20,6 +20,7 @@ RSpec.describe GovukApps do
 
       expect(definition.repo_url).to eq("https://github.com/alphagov/frontend.git")
       expect(definition.port_env_var).to eq("PORT")
+      expect(definition.env).to eq("PLEK_SERVICE_CONTENT_STORE_URI" => "https://www.gov.uk/api")
     end
 
     it "returns nil for an unknown app" do

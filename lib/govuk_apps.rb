@@ -1,9 +1,14 @@
 module GovukApps
-  Definition = Struct.new(:name, :repo_url, :port_env_var, keyword_init: true)
+  Definition = Struct.new(:name, :repo_url, :port_env_var, :env, keyword_init: true)
 
   def self.all
     @all ||= YAML.load_file(Rails.root.join("config/govuk_apps.yml")).map do |name, attrs|
-      Definition.new(name: name, repo_url: attrs.fetch("repo_url"), port_env_var: attrs.fetch("port_env_var"))
+      Definition.new(
+        name: name,
+        repo_url: attrs.fetch("repo_url"),
+        port_env_var: attrs.fetch("port_env_var"),
+        env: attrs.fetch("env", {}),
+      )
     end
   end
 

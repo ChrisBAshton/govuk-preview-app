@@ -3,6 +3,14 @@
 # This is a small manifest owned by App Preview itself (not a file each
 # previewable app's own repo has to carry). Extend this as support for more
 # apps and their dependencies (e.g. Whitehall -> Publishing API) is added.
+#
+# `env` is a fixed set of extra environment variables passed to the app's
+# container. For now this is how we point an app's own dependencies (e.g.
+# frontend's Content Store client, via Plek) at the real GOV.UK services
+# instead of running a whole dependency graph of previews - a stopgap ahead
+# of proper per-preview dependency declarations (see the roadmap).
 frontend:
   repo_url: https://github.com/alphagov/frontend.git
   port_env_var: PORT
+  env:
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
