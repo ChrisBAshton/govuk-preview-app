@@ -43,10 +43,11 @@ RSpec.describe DockerRunner do
       expect(Open3).to have_received(:capture3) do |*args|
         expect(args[0..3]).to eq(["docker", "run", "-d", "--name"])
         expect(args[4]).to eq(runner.container_name)
-        expect(args[5..6]).to eq(["-p", "20123:20123"])
+        expect(args[5..6]).to eq(["--network", "govuk-app-preview_default"])
+        expect(args[7..8]).to eq(["-p", "20123:20123"])
         expect(args.last).to eq(runner.image_tag)
 
-        env_section = args[7...-1]
+        env_section = args[9...-1]
         expect(env_section.each_slice(2).map(&:first).uniq).to eq(["-e"])
         env = env_section.each_slice(2).to_h { |_flag, kv| kv.split("=", 2) }
         expect(env["PORT"]).to eq("20123")
@@ -66,7 +67,7 @@ RSpec.describe DockerRunner do
       runner.start!
 
       secret_key_bases = calls.map do |args|
-        env = args[7...-1].each_slice(2).to_h { |_flag, kv| kv.split("=", 2) }
+        env = args[9...-1].each_slice(2).to_h { |_flag, kv| kv.split("=", 2) }
         env["SECRET_KEY_BASE"]
       end
       expect(secret_key_bases.uniq.size).to eq(2)

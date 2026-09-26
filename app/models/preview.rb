@@ -15,8 +15,12 @@ class Preview < ApplicationRecord
 
   before_validation :generate_slug, on: :create
 
+  def self.base_domain
+    ENV.fetch("APP_PREVIEW_BASE_DOMAIN", "govuk-app-preview.dev.gov.uk")
+  end
+
   def hostname
-    "#{slug}.#{ENV.fetch('APP_PREVIEW_BASE_DOMAIN', 'app-preview.test')}"
+    "#{slug}.#{self.class.base_domain}"
   end
 
 private

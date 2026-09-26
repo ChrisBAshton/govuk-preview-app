@@ -53,12 +53,13 @@ Rails.application.configure do
   # Only use :id for inspections in production.
   config.active_record.attributes_for_inspect = [:id]
 
-  # Enable DNS rebinding protection and other `Host` header attacks.
-  # config.hosts = [
-  #   "example.com",     # Allow requests from example.com
-  #   /.*\.example\.com/ # Allow requests from subdomains like `www.example.com`
-  # ]
-  #
+  # Allow the app's own hostname, and any preview subdomain of it (see
+  # HostRouter) - defaults to the local dev domain, but is the same
+  # APP_PREVIEW_BASE_DOMAIN env var used on integration.
+  base_domain = ENV.fetch("APP_PREVIEW_BASE_DOMAIN", "govuk-app-preview.dev.gov.uk")
+  config.hosts << base_domain
+  config.hosts << /.*\.#{Regexp.escape(base_domain)}/
+
   # Skip DNS rebinding protection for the default health check endpoint.
   # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
 end

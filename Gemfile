@@ -12,6 +12,7 @@ gem "govuk_sidekiq"
 gem "pg", "~> 1.1"
 gem "plek"
 gem "puma", ">= 5.0"
+gem "rack-proxy"
 gem "sprockets-rails"
 
 group :development, :test do

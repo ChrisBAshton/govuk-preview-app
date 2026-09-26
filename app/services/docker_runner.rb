@@ -26,6 +26,7 @@ class DockerRunner
     container_id, = run!(
       "docker", "run", "-d",
       "--name", container_name,
+      "--network", network_name,
       "-p", "#{preview.port}:#{preview.port}",
       *env_args,
       image_tag
@@ -50,6 +51,13 @@ class DockerRunner
   end
 
 private
+
+  # So sibling preview containers are resolvable by name (via Docker's
+  # embedded DNS) from this app's own container - see HostRouter, and
+  # PreviewsCreateJob's readiness wait, which both rely on this.
+  def network_name
+    ENV.fetch("APP_PREVIEW_DOCKER_NETWORK", "govuk-app-preview_default")
+  end
 
   # SECRET_KEY_BASE is needed for any Rails app to boot at all in production
   # mode (which the base GOV.UK Docker images run in by default) - it's not
