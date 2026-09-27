@@ -47,22 +47,40 @@ class DockerRunner
   end
 
   # A one-off, auto-removed container running the same image/env as start!,
-  # to prepare a freshly-started database before the long-running container
-  # begins. db:prepare alone (not db:seed too) is deliberate: db:prepare
-  # already runs db:seed itself the first time it creates a database (see
-  # ActiveRecord::Tasks::DatabaseTasks#prepare_all) - since every preview's
-  # database is freshly created, adding an explicit db:seed here would run
-  # an app's seeds.rb a second time in the same invocation, which broke
-  # Whitehall's (its seeds.rb calls the non-idempotent Organisation.
-  # skip_callback, which raises if the first, implicit seed run already
-  # removed that callback).
+  # to create the schema on a freshly-started database before the
+  # long-running container begins. Deliberately db:create db:schema:load,
+  # not db:prepare: db:prepare also seeds the database itself the first
+  # time it creates one (see ActiveRecord::Tasks::DatabaseTasks#
+  # prepare_all), which isn't safe to treat as fatal alongside our own
+  # explicit #seed! call below (some apps' seeds.rb isn't safe to run
+  # twice - see #seed!) - schema/migration failure is a real "this preview
+  # can't run at all" condition, so this step is still fatal (see
+  # PreviewBuilder).
   def migrate!(extra_env: {})
     run!(
       "docker", "run", "--rm",
       "--network", network_name,
       *env_args(extra_env),
       image_tag,
-      "bin/rails", "db:prepare"
+      "bin/rails", "db:create", "db:schema:load"
+    )
+  end
+
+  # A one-off, auto-removed container running an app's db/seeds.rb.
+  # Deliberately a separate step from migrate! (and, unlike it, not fatal -
+  # see PreviewBuilder): some apps' seeds aren't safe to previewed on an
+  # old, unmaintained branch (e.g. a Whitehall branch whose seeds.rb calls
+  # the non-idempotent Organisation.skip_callback more than once always
+  # raises) - a preview should still come up and be usable even without
+  # seed data, rather than fail outright over what's fundamentally a
+  # cosmetic/convenience step.
+  def seed!(extra_env: {})
+    run!(
+      "docker", "run", "--rm",
+      "--network", network_name,
+      *env_args(extra_env),
+      image_tag,
+      "bin/rails", "db:seed"
     )
   end
 
@@ -129,8 +147,19 @@ private
 
   def run!(*command)
     out, err, status = Open3.capture3(*command)
-    raise DockerError, err unless status.success?
+    raise DockerError, extract_error(err) unless status.success?
 
     [out, err]
+  end
+
+  # A failing `bin/rails` invocation's stderr is usually preceded by
+  # unrelated boilerplate (a container home-directory warning, Bundler's
+  # tmpdir notice) - callers that truncate this (e.g. PreviewBuilder's
+  # status_message) would otherwise keep only that noise and lose the
+  # actual error. Start from "bin/rails aborted!" when present; a
+  # `docker build` failure (no such marker) falls back to the raw text.
+  def extract_error(err)
+    marker = err.index("bin/rails aborted!")
+    marker ? err[marker..] : err
   end
 end

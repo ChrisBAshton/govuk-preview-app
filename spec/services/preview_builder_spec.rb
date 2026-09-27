@@ -10,7 +10,10 @@ RSpec.describe PreviewBuilder do
   end
 
   def stub_docker(preview, start_result: "container-123")
-    docker = instance_double(DockerRunner, build!: nil, start!: start_result, migrate!: nil, container_name: "govuk-preview-app-#{preview.slug}")
+    docker = instance_double(
+      DockerRunner, build!: nil, start!: start_result, migrate!: nil, seed!: nil,
+                    container_name: "govuk-preview-app-#{preview.slug}"
+    )
     allow(DockerRunner).to receive(:new).with(preview).and_return(docker)
     docker
   end
@@ -82,6 +85,21 @@ RSpec.describe PreviewBuilder do
         expect(docker).to have_received(:start!).with(extra_env: { "DATABASE_URL" => "postgresql://db/app_preview" }, publish_port: true)
         expect(preview.reload.status).to eq("running")
       end
+
+      it "marks the preview running with a warning message when seeding fails, rather than failed" do
+        preview = create(:preview, app_name: "publishing-api", branch: "my-branch")
+        stub_checkout(preview)
+        docker = stub_docker(preview)
+        allow(docker).to receive(:seed!).and_raise(DockerRunner::DockerError, "boom")
+        allow(ConfigOverrides).to receive(:new).and_return(instance_double(ConfigOverrides, write!: nil))
+        allow(PortAllocator).to receive(:allocate).and_return(20_456)
+        allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "postgresql://db/app_preview"))
+
+        described_class.new(preview).build!
+
+        expect(docker).to have_received(:start!)
+        expect(preview.reload).to have_attributes(status: "running", status_message: "Seed data failed: boom")
+      end
     end
 
     context "with an app that has a dependency (whitehall -> publishing-api)" do
@@ -92,12 +110,18 @@ RSpec.describe PreviewBuilder do
         allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "mysql2://db/app_preview"))
         allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
 
-        docker = instance_double(DockerRunner, build!: nil, start!: "container-123", migrate!: nil, container_name: "govuk-preview-app-#{preview.slug}")
+        docker = instance_double(
+          DockerRunner, build!: nil, start!: "container-123", migrate!: nil, seed!: nil,
+                        container_name: "govuk-preview-app-#{preview.slug}"
+        )
         allow(DockerRunner).to receive(:new) do |p|
           if p.id == preview.id
             docker
           else
-            instance_double(DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, container_name: "govuk-preview-app-#{p.slug}")
+            instance_double(
+              DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, seed!: nil,
+                            container_name: "govuk-preview-app-#{p.slug}"
+            )
           end
         end
 
@@ -120,8 +144,14 @@ RSpec.describe PreviewBuilder do
         allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "url"))
         allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
 
-        parent_docker = instance_double(DockerRunner, build!: nil, start!: "parent-container", migrate!: nil, container_name: "parent-container-name")
-        dependent_docker = instance_double(DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, container_name: "dep-container-name")
+        parent_docker = instance_double(
+          DockerRunner, build!: nil, start!: "parent-container", migrate!: nil, seed!: nil,
+                        container_name: "parent-container-name"
+        )
+        dependent_docker = instance_double(
+          DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, seed!: nil,
+                        container_name: "dep-container-name"
+        )
         allow(DockerRunner).to receive(:new) { |p| p.parent_id.nil? ? parent_docker : dependent_docker }
 
         described_class.new(preview).build!

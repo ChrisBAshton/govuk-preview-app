@@ -109,7 +109,7 @@ RSpec.describe DockerRunner do
   end
 
   describe "#migrate!" do
-    it "runs a one-off, auto-removed container preparing the database" do
+    it "runs a one-off, auto-removed container creating the schema (not seeding)" do
       allow(Open3).to receive(:capture3).and_return(["", "", success])
 
       runner.migrate!(extra_env: { "DATABASE_URL" => "postgresql://db/app_preview" })
@@ -117,7 +117,7 @@ RSpec.describe DockerRunner do
       expect(Open3).to have_received(:capture3) do |*args|
         expect(args[0..2]).to eq(["docker", "run", "--rm"])
         expect(args[3..4]).to eq(["--network", "govuk-preview-app_default"])
-        expect(args.last(3)).to eq([runner.image_tag, "bin/rails", "db:prepare"])
+        expect(args.last(4)).to eq([runner.image_tag, "bin/rails", "db:create", "db:schema:load"])
       end
     end
 
@@ -126,6 +126,44 @@ RSpec.describe DockerRunner do
       allow(Open3).to receive(:capture3).and_return(["", "boom", failure])
 
       expect { runner.migrate! }.to raise_error(described_class::DockerError, /boom/)
+    end
+
+    it "strips leading container boilerplate from the error, keeping the actual failure" do
+      failure = instance_double(Process::Status, success?: false)
+      noisy_error = <<~ERR
+        INFO: with_tmpdir_for_ruby: execing ruby with TMPDIR=/tmp/ruby-app-abc123
+        `/app` is not writable.
+        Bundler will use `/tmp/ruby-app-abc123/bundler-1' as your home directory temporarily.
+        bin/rails aborted!
+        ArgumentError: something went wrong
+      ERR
+      allow(Open3).to receive(:capture3).and_return(["", noisy_error, failure])
+
+      expect { runner.migrate! }.to raise_error(described_class::DockerError) do |error|
+        expect(error.message).to start_with("bin/rails aborted!")
+        expect(error.message).not_to include("with_tmpdir_for_ruby")
+      end
+    end
+  end
+
+  describe "#seed!" do
+    it "runs a one-off, auto-removed container running db:seed" do
+      allow(Open3).to receive(:capture3).and_return(["", "", success])
+
+      runner.seed!(extra_env: { "DATABASE_URL" => "postgresql://db/app_preview" })
+
+      expect(Open3).to have_received(:capture3) do |*args|
+        expect(args[0..2]).to eq(["docker", "run", "--rm"])
+        expect(args[3..4]).to eq(["--network", "govuk-preview-app_default"])
+        expect(args.last(3)).to eq([runner.image_tag, "bin/rails", "db:seed"])
+      end
+    end
+
+    it "raises DockerError when the seed run fails" do
+      failure = instance_double(Process::Status, success?: false)
+      allow(Open3).to receive(:capture3).and_return(["", "boom", failure])
+
+      expect { runner.seed! }.to raise_error(described_class::DockerError, /boom/)
     end
   end
 

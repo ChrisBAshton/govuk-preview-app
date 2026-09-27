@@ -38,10 +38,13 @@ class PreviewBuilder
 
     preview.update!(status: :starting, port: PortAllocator.allocate)
 
+    seed_failure = nil
+
     if app.database
       database_url = DatabaseRunner.new(preview, app.database).start!
       extra_env = extra_env.merge("DATABASE_URL" => database_url)
       docker.migrate!(extra_env: extra_env)
+      seed_failure = seed_database(docker, extra_env)
     end
 
     # Dependency previews are internal-only: reachable by sibling containers
@@ -51,12 +54,25 @@ class PreviewBuilder
     # shouldn't be reachable at a guessable public-looking subdomain.
     container_id = docker.start!(extra_env: extra_env, publish_port: preview.parent_id.nil?)
 
-    preview.update!(status: :running, container_id: container_id)
+    preview.update!(status: :running, container_id: container_id, status_message: seed_failure)
   rescue *RESCUED_ERRORS => e
     preview.update!(status: :failed, status_message: e.message.truncate(255))
   end
 
 private
+
+  # Not fatal, unlike migrate! - some apps' seeds.rb isn't safe to run on an
+  # old/unmaintained branch (see DockerRunner#seed!), and a preview should
+  # still come up and be usable without seed data rather than fail outright
+  # over what's fundamentally a cosmetic/convenience step. Returns a short
+  # message to record on the (still successfully running) preview, or nil
+  # if seeding succeeded.
+  def seed_database(docker, extra_env)
+    docker.seed!(extra_env: extra_env)
+    nil
+  rescue DockerRunner::DockerError => e
+    "Seed data failed: #{e.message.truncate(200)}"
+  end
 
   def build_dependencies!(app)
     app.dependencies.each_with_object({}) do |dep_name, env|
