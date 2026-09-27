@@ -19,8 +19,18 @@ class Preview < ApplicationRecord
     ENV.fetch("APP_PREVIEW_BASE_DOMAIN", "govuk-app-preview.dev.gov.uk")
   end
 
+  # http locally (no TLS in front of nginx here); integration will run with
+  # APP_PREVIEW_SCHEME=https once there's a real Ingress/ACM cert in front.
+  def self.scheme
+    ENV.fetch("APP_PREVIEW_SCHEME", "http")
+  end
+
   def hostname
     "#{slug}.#{self.class.base_domain}"
+  end
+
+  def url
+    "#{self.class.scheme}://#{hostname}"
   end
 
 private

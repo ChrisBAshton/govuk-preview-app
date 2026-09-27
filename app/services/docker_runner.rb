@@ -61,14 +61,36 @@ private
 
   # SECRET_KEY_BASE is needed for any Rails app to boot at all in production
   # mode (which the base GOV.UK Docker images run in by default) - it's not
-  # app-specific, so every preview container gets its own random one. Beyond
-  # that, each app's manifest entry can declare a fixed set of extra env vars
-  # (e.g. pointing an app's Plek-resolved dependencies at real GOV.UK
-  # services) - see config/govuk_apps.yml.
+  # app-specific, so every preview container gets its own random one.
+  # RAILS_SERVE_STATIC_FILES: in real production, static assets are served by
+  # a separate layer (CDN/asset host), not Rails itself - most GOV.UK apps'
+  # own production.rb gates config.public_file_server.enabled on this env var
+  # (a few, e.g. Whitehall, always enable it regardless, in which case this
+  # is simply a no-op). There's no separate asset-serving layer here, so
+  # every preview needs Rails to serve its own assets directly.
+  # HEROKU_APP_NAME: frontend's own production.rb sets
+  # config.action_dispatch.x_sendfile_header to "X-Sendfile" unless this is
+  # set - which makes Rails hand back an *empty* asset body, trusting an
+  # Apache-style front end to intercept that header and serve the file
+  # itself. Our nginx doesn't have filesystem access to a preview
+  # container's files at all, so it can't act on X-Sendfile (or nginx's own
+  # X-Accel-Redirect equivalent) either way - the only fix is getting the
+  # app to serve the body itself, and this is the escape hatch frontend
+  # happens to have for that. Not a general GOV.UK convention (e.g.
+  # Whitehall hardcodes X-Accel-Redirect with no such override) - noted as
+  # a rough edge for when a second app is added, not solved universally here.
+  # Beyond these, each app's manifest entry can declare a fixed set of extra
+  # env vars (e.g. pointing an app's Plek-resolved dependencies at real
+  # GOV.UK services) - see config/govuk_apps.yml.
   def env_args
     app = GovukApps.find(preview.app_name)
 
-    env = { app.port_env_var => preview.port, "SECRET_KEY_BASE" => SecureRandom.hex(32) }.merge(app.env)
+    env = {
+      app.port_env_var => preview.port,
+      "SECRET_KEY_BASE" => SecureRandom.hex(32),
+      "RAILS_SERVE_STATIC_FILES" => "true",
+      "HEROKU_APP_NAME" => "govuk-app-preview",
+    }.merge(app.env)
 
     env.flat_map { |key, value| ["-e", "#{key}=#{value}"] }
   end

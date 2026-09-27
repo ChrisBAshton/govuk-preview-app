@@ -17,7 +17,7 @@
       { text: preview.app_name },
       { text: preview.branch },
       { text: render("govuk_publishing_components/components/tag", text: preview.status) },
-      { text: preview.running? ? link_to(preview.hostname, "https://#{preview.hostname}") : "" },
+      { text: preview.running? ? link_to(preview.hostname, preview.url) : "" },
       { text: button_to("Delete", preview_path(preview), method: :delete, class: "govuk-button govuk-button--warning govuk-!-margin-bottom-0", data: { confirm: "Are you sure?" }) },
     ]
   end,

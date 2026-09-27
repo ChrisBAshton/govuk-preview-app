@@ -53,11 +53,25 @@ RSpec.describe Preview do
     end
   end
 
+  describe ".scheme" do
+    it "defaults to http" do
+      expect(described_class.scheme).to eq("http")
+    end
+  end
+
   describe "#hostname" do
     it "combines the slug with the configured base domain" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch")
 
       expect(preview.hostname).to eq("frontend-my-branch.govuk-app-preview.dev.gov.uk")
+    end
+  end
+
+  describe "#url" do
+    it "combines the configured scheme with the hostname" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch")
+
+      expect(preview.url).to eq("http://frontend-my-branch.govuk-app-preview.dev.gov.uk")
     end
   end
 

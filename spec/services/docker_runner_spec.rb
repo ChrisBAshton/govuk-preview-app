@@ -52,6 +52,8 @@ RSpec.describe DockerRunner do
         env = env_section.each_slice(2).to_h { |_flag, kv| kv.split("=", 2) }
         expect(env["PORT"]).to eq("20123")
         expect(env["SECRET_KEY_BASE"]).to match(/\A[0-9a-f]{64}\z/)
+        expect(env["RAILS_SERVE_STATIC_FILES"]).to eq("true")
+        expect(env["HEROKU_APP_NAME"]).to eq("govuk-app-preview")
         expect(env["PLEK_SERVICE_CONTENT_STORE_URI"]).to eq("https://www.gov.uk/api")
       end
     end
