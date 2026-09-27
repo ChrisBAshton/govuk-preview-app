@@ -45,6 +45,32 @@ RSpec.describe Preview do
 
       expect(preview.slug).to eq("custom-slug")
     end
+
+    it "scopes a dependency's slug to its parent, so two parents can each depend on the same app+branch" do
+      parent_a = create(:preview, app_name: "whitehall", branch: "branch-a")
+      parent_b = create(:preview, app_name: "whitehall", branch: "branch-b")
+
+      dependent_a = create(:preview, app_name: "publishing-api", branch: "main", parent: parent_a)
+      dependent_b = build(:preview, app_name: "publishing-api", branch: "main", parent: parent_b)
+
+      expect(dependent_a.slug).to eq("publishing-api-main-for-#{parent_a.slug}")
+      expect(dependent_b).to be_valid
+      expect(dependent_b.slug).to eq("publishing-api-main-for-#{parent_b.slug}")
+    end
+  end
+
+  describe "#parent / #dependents" do
+    it "links a dependency preview to its parent" do
+      parent = create(:preview, app_name: "whitehall", branch: "my-branch")
+      dependent = create(:preview, app_name: "publishing-api", branch: "main", parent: parent)
+
+      expect(dependent.parent).to eq(parent)
+      expect(parent.dependents).to eq([dependent])
+    end
+
+    it "has no parent by default" do
+      expect(create(:preview).parent).to be_nil
+    end
   end
 
   describe ".base_domain" do

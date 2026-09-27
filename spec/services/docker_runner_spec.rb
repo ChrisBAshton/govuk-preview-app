@@ -5,6 +5,10 @@ RSpec.describe DockerRunner do
   let(:runner) { described_class.new(preview) }
   let(:success) { instance_double(Process::Status, success?: true) }
 
+  def env_from(args)
+    args[9...-1].each_slice(2).to_h { |_flag, kv| kv.split("=", 2) }
+  end
+
   describe "#image_tag" do
     it "namespaces the image by app and includes the preview's slug" do
       expect(runner.image_tag).to eq("govuk-app-preview/frontend:#{preview.slug}")
@@ -36,26 +40,57 @@ RSpec.describe DockerRunner do
   end
 
   describe "#start!" do
-    it "runs the built image with the preview's port, a random secret key base, and the app's declared env" do
-      allow(Open3).to receive(:capture3).and_return(["abc123\n", "", success])
+    it "removes any stale container first, then runs the built image with the preview's port and baseline env" do
+      calls = []
+      allow(Open3).to receive(:capture3) do |*args|
+        calls << args
+        ["abc123\n", "", success]
+      end
 
       expect(runner.start!).to eq("abc123")
-      expect(Open3).to have_received(:capture3) do |*args|
-        expect(args[0..3]).to eq(["docker", "run", "-d", "--name"])
-        expect(args[4]).to eq(runner.container_name)
-        expect(args[5..6]).to eq(["--network", "govuk-app-preview_default"])
-        expect(args[7..8]).to eq(["-p", "20123:20123"])
-        expect(args.last).to eq(runner.image_tag)
 
-        env_section = args[9...-1]
-        expect(env_section.each_slice(2).map(&:first).uniq).to eq(["-e"])
-        env = env_section.each_slice(2).to_h { |_flag, kv| kv.split("=", 2) }
-        expect(env["PORT"]).to eq("20123")
-        expect(env["SECRET_KEY_BASE"]).to match(/\A[0-9a-f]{64}\z/)
-        expect(env["RAILS_SERVE_STATIC_FILES"]).to eq("true")
-        expect(env["HEROKU_APP_NAME"]).to eq("govuk-app-preview")
-        expect(env["PLEK_SERVICE_CONTENT_STORE_URI"]).to eq("https://www.gov.uk/api")
+      expect(calls).to include(["docker", "rm", "-f", runner.container_name])
+
+      run_args = calls.find { |args| args[0..2] == ["docker", "run", "-d"] }
+      expect(run_args[3..4]).to eq(["--name", runner.container_name])
+      expect(run_args[5..6]).to eq(["--network", "govuk-app-preview_default"])
+      expect(run_args[7..8]).to eq(["-p", "20123:20123"])
+      expect(run_args.last).to eq(runner.image_tag)
+
+      env = env_from(run_args)
+      expect(env["PORT"]).to eq("20123")
+      expect(env["SECRET_KEY_BASE"]).to match(/\A[0-9a-f]{64}\z/)
+      expect(env["RAILS_SERVE_STATIC_FILES"]).to eq("true")
+      expect(env["GDS_SSO_STRATEGY"]).to eq("mock")
+      expect(env["REDIS_URL"]).to eq("redis://redis:6379")
+      expect(env["PLEK_SERVICE_CONTENT_STORE_URI"]).to eq("https://www.gov.uk/api")
+    end
+
+    it "omits the port publish flag when publish_port is false" do
+      calls = []
+      allow(Open3).to receive(:capture3) do |*args|
+        calls << args
+        ["abc123\n", "", success]
       end
+
+      runner.start!(publish_port: false)
+
+      run_args = calls.find { |args| args[0..2] == ["docker", "run", "-d"] }
+      expect(run_args).not_to include("-p")
+      expect(run_args[7..8]).to eq(["-e", "PORT=20123"])
+    end
+
+    it "merges extra_env on top of the baseline and manifest env" do
+      calls = []
+      allow(Open3).to receive(:capture3) do |*args|
+        calls << args
+        ["abc123\n", "", success]
+      end
+
+      runner.start!(extra_env: { "DATABASE_URL" => "postgresql://db/app_preview" })
+
+      run_args = calls.find { |args| args[0..2] == ["docker", "run", "-d"] }
+      expect(env_from(run_args)["DATABASE_URL"]).to eq("postgresql://db/app_preview")
     end
 
     it "generates a different secret key base for each container" do
@@ -68,11 +103,29 @@ RSpec.describe DockerRunner do
       runner.start!
       runner.start!
 
-      secret_key_bases = calls.map do |args|
-        env = args[9...-1].each_slice(2).to_h { |_flag, kv| kv.split("=", 2) }
-        env["SECRET_KEY_BASE"]
-      end
+      secret_key_bases = calls.select { |args| args[0..2] == ["docker", "run", "-d"] }.map { |args| env_from(args)["SECRET_KEY_BASE"] }
       expect(secret_key_bases.uniq.size).to eq(2)
+    end
+  end
+
+  describe "#migrate!" do
+    it "runs a one-off, auto-removed container preparing the database" do
+      allow(Open3).to receive(:capture3).and_return(["", "", success])
+
+      runner.migrate!(extra_env: { "DATABASE_URL" => "postgresql://db/app_preview" })
+
+      expect(Open3).to have_received(:capture3) do |*args|
+        expect(args[0..2]).to eq(["docker", "run", "--rm"])
+        expect(args[3..4]).to eq(["--network", "govuk-app-preview_default"])
+        expect(args.last(3)).to eq([runner.image_tag, "bin/rails", "db:prepare"])
+      end
+    end
+
+    it "raises DockerError when the migrate run fails" do
+      failure = instance_double(Process::Status, success?: false)
+      allow(Open3).to receive(:capture3).and_return(["", "boom", failure])
+
+      expect { runner.migrate! }.to raise_error(described_class::DockerError, /boom/)
     end
   end
 

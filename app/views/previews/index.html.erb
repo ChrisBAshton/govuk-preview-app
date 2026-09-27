@@ -13,12 +13,23 @@
     { text: "" },
   ],
   rows: @previews.map do |preview|
+    app_name = preview.app_name
+    app_name += " (dependency of #{preview.parent.slug})" if preview.parent.present?
+
+    url_cell = if preview.parent.present?
+                 "Internal dependency"
+               elsif preview.running?
+                 link_to(preview.hostname, preview.url)
+               else
+                 ""
+               end
+
     [
-      { text: preview.app_name },
+      { text: app_name },
       { text: preview.branch },
       { text: render("govuk_publishing_components/components/tag", text: preview.status) },
-      { text: preview.running? ? link_to(preview.hostname, preview.url) : "" },
-      { text: button_to("Delete", preview_path(preview), method: :delete, class: "govuk-button govuk-button--warning govuk-!-margin-bottom-0", data: { confirm: "Are you sure?" }) },
+      { text: url_cell },
+      { text: preview.parent.blank? ? button_to("Delete", preview_path(preview), method: :delete, class: "govuk-button govuk-button--warning govuk-!-margin-bottom-0", data: { confirm: "Are you sure?" }) : "" },
     ]
   end,
 } %>

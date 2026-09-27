@@ -9,6 +9,12 @@ class Preview < ApplicationRecord
     failed: "failed",
   }, default: :queued
 
+  belongs_to :parent, class_name: "Preview", optional: true
+  # No `dependent: :destroy` - a dependency preview owns a container/DB/
+  # checkout that an AR callback can't clean up. PreviewDestroyer stops
+  # those explicitly before destroying the row.
+  has_many :dependents, class_name: "Preview", foreign_key: :parent_id, inverse_of: :parent
+
   validates :app_name, presence: true, inclusion: { in: -> { GovukApps.app_names } }
   validates :branch, presence: true
   validates :slug, presence: true, uniqueness: true
@@ -38,6 +44,12 @@ private
   def generate_slug
     return if app_name.blank? || branch.blank?
 
-    self.slug ||= "#{app_name}-#{branch}".parameterize
+    base = "#{app_name}-#{branch}"
+    # A dependency preview is dedicated to its parent (never shared across
+    # parents), so its slug needs to be unique per-parent, not just per
+    # app+branch - otherwise two previews both depending on
+    # publishing-api/main would collide.
+    base = "#{base}-for-#{parent.slug}" if parent.present?
+    self.slug ||= base.parameterize
   end
 end

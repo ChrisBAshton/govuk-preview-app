@@ -25,6 +25,9 @@ private
     suffix = ".#{Preview.base_domain}"
     return nil unless host.end_with?(suffix)
 
-    Preview.running.find_by(slug: host.delete_suffix(suffix))
+    # A dependency preview (e.g. Publishing API) is internal-only - it's an
+    # unauthenticated, state-mutating API with no host-published port, and
+    # must never be reachable at a guessable public-looking subdomain.
+    Preview.running.where(parent_id: nil).find_by(slug: host.delete_suffix(suffix))
   end
 end

@@ -47,4 +47,13 @@ RSpec.describe HostRouter do
 
     expect(status).to eq(200)
   end
+
+  it "does not proxy a running dependency preview - it's internal-only, never hostname-routable" do
+    parent = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running, port: 20_000)
+    dependent = create(:preview, app_name: "publishing-api", branch: "main", parent: parent, status: :running, port: 20_001)
+
+    status, = router.call(env_for(dependent.hostname))
+
+    expect(status).to eq(200)
+  end
 end

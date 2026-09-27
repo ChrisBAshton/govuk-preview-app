@@ -22,11 +22,14 @@ class Checkout
 
     repo_url = GovukApps.find(preview.app_name).repo_url
 
+    # Shallow: we only ever need the current state of one branch, not its
+    # history - meaningfully faster, and less exposed to the kind of
+    # mid-transfer network blip a full clone of a large repo hits more often.
     if path.exist?
-      run!("git", "-C", path.to_s, "fetch", "origin", preview.branch)
+      run!("git", "-C", path.to_s, "fetch", "--depth", "1", "origin", preview.branch)
       run!("git", "-C", path.to_s, "checkout", "-B", preview.branch, "origin/#{preview.branch}")
     else
-      run!("git", "clone", "--branch", preview.branch, "--single-branch", repo_url, path.to_s)
+      run!("git", "clone", "--branch", preview.branch, "--single-branch", "--depth", "1", repo_url, path.to_s)
     end
 
     path

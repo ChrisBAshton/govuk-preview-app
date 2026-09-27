@@ -25,7 +25,7 @@ RSpec.describe Checkout do
         checkout.checkout!
 
         expect(Open3).to have_received(:capture3).with(
-          "git", "clone", "--branch", "my-branch", "--single-branch",
+          "git", "clone", "--branch", "my-branch", "--single-branch", "--depth", "1",
           "https://github.com/alphagov/frontend.git", checkout.path.to_s
         )
       end
@@ -40,7 +40,7 @@ RSpec.describe Checkout do
 
         checkout.checkout!
 
-        expect(Open3).to have_received(:capture3).with("git", "-C", checkout.path.to_s, "fetch", "origin", "my-branch")
+        expect(Open3).to have_received(:capture3).with("git", "-C", checkout.path.to_s, "fetch", "--depth", "1", "origin", "my-branch")
         expect(Open3).to have_received(:capture3).with("git", "-C", checkout.path.to_s, "checkout", "-B", "my-branch", "origin/my-branch")
       end
     end
