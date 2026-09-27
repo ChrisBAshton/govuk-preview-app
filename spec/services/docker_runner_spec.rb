@@ -15,6 +15,21 @@ RSpec.describe DockerRunner do
     end
   end
 
+  describe ".daemon_reachable?" do
+    it "is true when docker info succeeds" do
+      allow(Open3).to receive(:capture3).with("docker", "info").and_return(["", "", success])
+
+      expect(described_class.daemon_reachable?).to be(true)
+    end
+
+    it "is false when docker info fails" do
+      failure = instance_double(Process::Status, success?: false)
+      allow(Open3).to receive(:capture3).with("docker", "info").and_return(["", "not running", failure])
+
+      expect(described_class.daemon_reachable?).to be(false)
+    end
+  end
+
   describe "#container_name" do
     it "is namespaced by the preview's slug" do
       expect(runner.container_name).to eq("govuk-preview-app-#{preview.slug}")
@@ -63,6 +78,7 @@ RSpec.describe DockerRunner do
       expect(env["RAILS_SERVE_STATIC_FILES"]).to eq("true")
       expect(env["GDS_SSO_STRATEGY"]).to eq("mock")
       expect(env["REDIS_URL"]).to eq("redis://redis:6379")
+      expect(env["GOVUK_WEBSITE_ROOT"]).to eq("https://www.integration.publishing.service.gov.uk")
       expect(env["PLEK_SERVICE_CONTENT_STORE_URI"]).to eq("https://www.gov.uk/api")
     end
 

@@ -10,6 +10,16 @@ class DockerRunner
     @preview = preview
   end
 
+  # Guards PreviewReconciler against a false-positive mass reconciliation -
+  # if the Docker socket/daemon itself isn't reachable yet (e.g. right at
+  # boot), every container existence check below would fail, which would
+  # otherwise look identical to every preview's containers actually having
+  # disappeared.
+  def self.daemon_reachable?
+    _out, _err, status = Open3.capture3("docker", "info")
+    status.success?
+  end
+
   def image_tag
     "govuk-preview-app/#{preview.app_name}:#{preview.slug}"
   end
@@ -126,6 +136,12 @@ private
   # We're not running previewed apps' own workers this pass, so pointing
   # every preview at Preview App's own shared Redis (already on the same
   # network) is harmless - nothing reads the queues it'd write to.
+  # GOVUK_WEBSITE_ROOT: a standard Plek/GOV.UK env var (not app-specific) -
+  # some apps gate integration/staging-only behaviour on it containing
+  # "integration"/"staging" (e.g. Whitehall's /flipflop dashboard access
+  # filter, Whitehall.integration_or_staging?) - previews are integration-
+  # like environments, so this makes that recognised rather than silently
+  # blocked under RAILS_ENV=production.
   # Beyond these, each app's manifest entry can declare a fixed set of extra
   # env vars (e.g. pointing an app's Plek-resolved dependencies at real
   # GOV.UK services), and `extra_env` carries per-instance values resolved
@@ -140,6 +156,7 @@ private
       "RAILS_SERVE_STATIC_FILES" => "true",
       "GDS_SSO_STRATEGY" => "mock",
       "REDIS_URL" => "redis://redis:6379",
+      "GOVUK_WEBSITE_ROOT" => "https://www.integration.publishing.service.gov.uk",
     }.merge(app.env).merge(extra_env)
 
     env.flat_map { |key, value| ["-e", "#{key}=#{value}"] }

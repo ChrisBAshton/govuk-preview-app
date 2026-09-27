@@ -37,6 +37,11 @@ class DatabaseRunner
     Open3.capture3("docker", "rm", container_name)
   end
 
+  def exists?
+    _out, _err, status = Open3.capture3("docker", "inspect", container_name)
+    status.success?
+  end
+
   def database_url
     case database.adapter
     when "mysql2" then "mysql2://root@#{container_name}/#{DATABASE_NAME}"

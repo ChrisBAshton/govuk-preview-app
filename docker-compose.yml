@@ -54,7 +54,7 @@ services:
     # Needs to read/write the mounted Docker socket below, which this
     # host's app user (uid 1001 in the image) can't - see the plan notes.
     user: root
-    command: bash -c "bin/rails db:prepare && bin/rails db:seed && bin/rails s"
+    command: bash -c "bin/rails db:prepare && bin/rails db:seed && bin/rails previews:reconcile && bin/rails s"
     environment: *app_env
     volumes:
       # A bind mount, not a named volume: DockerRunner builds/runs containers
@@ -74,7 +74,7 @@ services:
   worker:
     image: govuk-preview-app
     user: root
-    command: bundle exec sidekiq -C ./config/sidekiq.yml
+    command: bash -c "bin/rails previews:reconcile && bundle exec sidekiq -C ./config/sidekiq.yml"
     environment: *app_env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

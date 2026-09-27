@@ -72,4 +72,19 @@ RSpec.describe DatabaseRunner do
       expect(Open3).to have_received(:capture3).with("docker", "rm", runner.container_name)
     end
   end
+
+  describe "#exists?" do
+    it "is true when docker inspect succeeds" do
+      allow(Open3).to receive(:capture3).with("docker", "inspect", runner.container_name).and_return(["{}", "", success])
+
+      expect(runner.exists?).to be(true)
+    end
+
+    it "is false when docker inspect fails" do
+      failure = instance_double(Process::Status, success?: false)
+      allow(Open3).to receive(:capture3).with("docker", "inspect", runner.container_name).and_return(["", "no such object", failure])
+
+      expect(runner.exists?).to be(false)
+    end
+  end
 end
