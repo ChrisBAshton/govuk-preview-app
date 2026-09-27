@@ -15,7 +15,7 @@ class DockerRunner
   end
 
   def container_name
-    "govuk-preview-app-#{preview.slug}"
+    ContainerName.for(preview.slug)
   end
 
   def build!(checkout_path)

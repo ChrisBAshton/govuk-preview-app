@@ -19,7 +19,7 @@ class DatabaseRunner
   end
 
   def container_name
-    "govuk-preview-app-#{preview.slug}-db"
+    ContainerName.for(preview.slug, suffix: "-db")
   end
 
   def start!
@@ -59,14 +59,14 @@ private
   end
 
   def ready?
+    # -h 127.0.0.1 on both branches, not left to default to a Unix socket:
+    # both official images run a short-lived *temporary* init server (Unix
+    # socket only) before their real restart on TCP - a socket-based check
+    # answers "ready" during that false start. Forcing TCP is what actually
+    # distinguishes it from the real, final server.
     check = case database.adapter
-            # -h 127.0.0.1, not "localhost": the mysql client treats
-            # "localhost" as "use the unix socket", which the official
-            # image's short-lived *temporary* init server (before its
-            # real restart) also answers on - forcing TCP is what
-            # actually distinguishes "really ready" from that false start.
             when "mysql2" then ["docker", "exec", container_name, "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
-            when "postgresql" then ["docker", "exec", container_name, "pg_isready", "-U", "postgres"]
+            when "postgresql" then ["docker", "exec", container_name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
             end
 
     _out, _err, status = Open3.capture3(*check)

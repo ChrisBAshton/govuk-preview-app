@@ -50,6 +50,16 @@ RSpec.describe DatabaseRunner do
 
       expect { runner.start! }.to raise_error(described_class::DatabaseError, /did not become ready/)
     end
+
+    it "checks postgresql readiness over TCP, not the default Unix socket" do
+      pg_runner = described_class.new(preview, GovukApps::Database.new(adapter: "postgresql", image: "postgres:17"))
+      allow(Open3).to receive(:capture3).and_return(["", "", success])
+      allow(Open3).to receive(:capture3)
+        .with("docker", "exec", pg_runner.container_name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1")
+        .and_return(["", "", success])
+
+      expect(pg_runner.start!).to eq(pg_runner.database_url)
+    end
   end
 
   describe "#stop!" do
