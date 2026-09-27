@@ -64,7 +64,7 @@ Rails.application.configure do
   # Allow the app's own hostname, and any preview subdomain of it (see
   # docker-compose.yml / HostRouter) - an unmatched/stale preview subdomain
   # then gets a normal Rails 404 rather than "Blocked hosts".
-  base_domain = ENV.fetch("APP_PREVIEW_BASE_DOMAIN", "govuk-app-preview.dev.gov.uk")
+  base_domain = ENV.fetch("PREVIEW_APP_BASE_DOMAIN", "govuk-preview-app.dev.gov.uk")
   config.hosts << base_domain
   config.hosts << /.*\.#{Regexp.escape(base_domain)}/
 end

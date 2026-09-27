@@ -8,7 +8,7 @@ RSpec.describe DatabaseRunner do
 
   describe "#container_name" do
     it "is namespaced by the preview's slug, distinct from the app container" do
-      expect(runner.container_name).to eq("govuk-app-preview-#{preview.slug}-db")
+      expect(runner.container_name).to eq("govuk-preview-app-#{preview.slug}-db")
     end
   end
 
@@ -35,7 +35,7 @@ RSpec.describe DatabaseRunner do
 
       expect(Open3).to have_received(:capture3).with("docker", "rm", "-f", runner.container_name)
       expect(Open3).to have_received(:capture3).with(
-        "docker", "run", "-d", "--name", runner.container_name, "--network", "govuk-app-preview_default",
+        "docker", "run", "-d", "--name", runner.container_name, "--network", "govuk-preview-app_default",
         "-e", "MYSQL_ALLOW_EMPTY_PASSWORD=yes", "-e", "MYSQL_DATABASE=app_preview", "mysql:8"
       )
     end

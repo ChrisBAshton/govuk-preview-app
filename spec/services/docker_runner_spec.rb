@@ -11,13 +11,13 @@ RSpec.describe DockerRunner do
 
   describe "#image_tag" do
     it "namespaces the image by app and includes the preview's slug" do
-      expect(runner.image_tag).to eq("govuk-app-preview/frontend:#{preview.slug}")
+      expect(runner.image_tag).to eq("govuk-preview-app/frontend:#{preview.slug}")
     end
   end
 
   describe "#container_name" do
     it "is namespaced by the preview's slug" do
-      expect(runner.container_name).to eq("govuk-app-preview-#{preview.slug}")
+      expect(runner.container_name).to eq("govuk-preview-app-#{preview.slug}")
     end
   end
 
@@ -53,7 +53,7 @@ RSpec.describe DockerRunner do
 
       run_args = calls.find { |args| args[0..2] == ["docker", "run", "-d"] }
       expect(run_args[3..4]).to eq(["--name", runner.container_name])
-      expect(run_args[5..6]).to eq(["--network", "govuk-app-preview_default"])
+      expect(run_args[5..6]).to eq(["--network", "govuk-preview-app_default"])
       expect(run_args[7..8]).to eq(["-p", "20123:20123"])
       expect(run_args.last).to eq(runner.image_tag)
 
@@ -116,7 +116,7 @@ RSpec.describe DockerRunner do
 
       expect(Open3).to have_received(:capture3) do |*args|
         expect(args[0..2]).to eq(["docker", "run", "--rm"])
-        expect(args[3..4]).to eq(["--network", "govuk-app-preview_default"])
+        expect(args[3..4]).to eq(["--network", "govuk-preview-app_default"])
         expect(args.last(3)).to eq([runner.image_tag, "bin/rails", "db:prepare"])
       end
     end

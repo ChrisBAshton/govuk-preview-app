@@ -19,7 +19,7 @@ FROM --platform=$TARGETPLATFORM $base_image
 # GOV.UK apps' own Dockerfiles use BuildKit-only features (e.g. $TARGETPLATFORM).
 RUN install_packages docker.io docker-buildx git
 
-ENV GOVUK_APP_NAME=govuk-app-preview
+ENV GOVUK_APP_NAME=govuk-preview-app
 WORKDIR $APP_HOME
 
 COPY --from=builder $BUNDLE_PATH $BUNDLE_PATH

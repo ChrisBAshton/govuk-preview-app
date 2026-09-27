@@ -27,7 +27,7 @@ class ConfigOverrides
   end
 
   def write!
-    path = checkout_path.join("config/initializers/zzz_app_preview_overrides.rb")
+    path = checkout_path.join("config/initializers/zzz_preview_app_overrides.rb")
     FileUtils.mkdir_p(path.dirname)
     File.write(path, <<~RUBY)
       Rails.application.config.action_dispatch.x_sendfile_header = nil

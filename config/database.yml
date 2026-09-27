@@ -5,12 +5,12 @@ default: &default
 
 development:
   <<: *default
-  database: govuk_app_preview_development
+  database: govuk_preview_app_development
   url: <%= ENV["DATABASE_URL"] %>
 
 test:
   <<: *default
-  database: govuk_app_preview_test
+  database: govuk_preview_app_test
   url: <%= ENV["TEST_DATABASE_URL"] %>
 
 production:

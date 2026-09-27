@@ -9,7 +9,7 @@ RSpec.describe ConfigOverrides do
     it "writes an initializer disabling x_sendfile_header, overriding the database connection, and clearing config.hosts" do
       described_class.new(checkout_path).write!
 
-      content = checkout_path.join("config/initializers/zzz_app_preview_overrides.rb").read
+      content = checkout_path.join("config/initializers/zzz_preview_app_overrides.rb").read
 
       expect(content).to include("config.action_dispatch.x_sendfile_header = nil")
       expect(content).to include('ActiveRecord::Base.establish_connection(ENV["DATABASE_URL"])')

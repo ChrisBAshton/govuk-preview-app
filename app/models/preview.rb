@@ -22,13 +22,13 @@ class Preview < ApplicationRecord
   before_validation :generate_slug, on: :create
 
   def self.base_domain
-    ENV.fetch("APP_PREVIEW_BASE_DOMAIN", "govuk-app-preview.dev.gov.uk")
+    ENV.fetch("PREVIEW_APP_BASE_DOMAIN", "govuk-preview-app.dev.gov.uk")
   end
 
   # http locally (no TLS in front of nginx here); integration will run with
-  # APP_PREVIEW_SCHEME=https once there's a real Ingress/ACM cert in front.
+  # PREVIEW_APP_SCHEME=https once there's a real Ingress/ACM cert in front.
   def self.scheme
-    ENV.fetch("APP_PREVIEW_SCHEME", "http")
+    ENV.fetch("PREVIEW_APP_SCHEME", "http")
   end
 
   def hostname

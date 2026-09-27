@@ -4,7 +4,7 @@ class Checkout
   class GitError < StandardError; end
 
   def self.root
-    Pathname.new(ENV.fetch("APP_PREVIEW_CHECKOUT_ROOT", Rails.root.join("tmp/checkouts")))
+    Pathname.new(ENV.fetch("PREVIEW_APP_CHECKOUT_ROOT", Rails.root.join("tmp/checkouts")))
   end
 
   attr_reader :preview

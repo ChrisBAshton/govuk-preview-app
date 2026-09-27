@@ -36,7 +36,7 @@ RSpec.describe HostRouter do
     router.call(env)
 
     expect(proxy).to have_received(:call).with(
-      hash_including("rack.backend" => "http://govuk-app-preview-#{preview.slug}:20123"),
+      hash_including("rack.backend" => "http://govuk-preview-app-#{preview.slug}:20123"),
     )
   end
 

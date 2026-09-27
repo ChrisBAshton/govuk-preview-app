@@ -19,7 +19,7 @@ class DatabaseRunner
   end
 
   def container_name
-    "govuk-app-preview-#{preview.slug}-db"
+    "govuk-preview-app-#{preview.slug}-db"
   end
 
   def start!
@@ -84,7 +84,7 @@ private
   end
 
   def network_name
-    ENV.fetch("APP_PREVIEW_DOCKER_NETWORK", "govuk-app-preview_default")
+    ENV.fetch("PREVIEW_APP_DOCKER_NETWORK", "govuk-preview-app_default")
   end
 
   def run!(*command)

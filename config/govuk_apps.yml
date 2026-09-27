@@ -1,6 +1,6 @@
-# The GOV.UK apps that App Preview knows how to build and run previews for.
+# The GOV.UK apps that Preview App knows how to build and run previews for.
 #
-# This is a small manifest owned by App Preview itself (not a file each
+# This is a small manifest owned by Preview App itself (not a file each
 # previewable app's own repo has to carry).
 #
 # `env` is a fixed set of extra environment variables passed to the app's

@@ -10,7 +10,7 @@ RSpec.describe PreviewBuilder do
   end
 
   def stub_docker(preview, start_result: "container-123")
-    docker = instance_double(DockerRunner, build!: nil, start!: start_result, migrate!: nil, container_name: "govuk-app-preview-#{preview.slug}")
+    docker = instance_double(DockerRunner, build!: nil, start!: start_result, migrate!: nil, container_name: "govuk-preview-app-#{preview.slug}")
     allow(DockerRunner).to receive(:new).with(preview).and_return(docker)
     docker
   end
@@ -92,12 +92,12 @@ RSpec.describe PreviewBuilder do
         allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "mysql2://db/app_preview"))
         allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
 
-        docker = instance_double(DockerRunner, build!: nil, start!: "container-123", migrate!: nil, container_name: "govuk-app-preview-#{preview.slug}")
+        docker = instance_double(DockerRunner, build!: nil, start!: "container-123", migrate!: nil, container_name: "govuk-preview-app-#{preview.slug}")
         allow(DockerRunner).to receive(:new) do |p|
           if p.id == preview.id
             docker
           else
-            instance_double(DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, container_name: "govuk-app-preview-#{p.slug}")
+            instance_double(DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, container_name: "govuk-preview-app-#{p.slug}")
           end
         end
 
@@ -107,7 +107,7 @@ RSpec.describe PreviewBuilder do
         expect(dependent).to have_attributes(app_name: "publishing-api", branch: "main", status: "running")
 
         expect(docker).to have_received(:start!).with(
-          extra_env: hash_including("PLEK_SERVICE_PUBLISHING_API_URI" => "http://govuk-app-preview-#{dependent.slug}:#{dependent.port}"),
+          extra_env: hash_including("PLEK_SERVICE_PUBLISHING_API_URI" => "http://govuk-preview-app-#{dependent.slug}:#{dependent.port}"),
           publish_port: true,
         )
         expect(preview.reload.status).to eq("running")

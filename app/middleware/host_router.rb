@@ -1,7 +1,7 @@
 # Dispatches requests for a running preview's hostname straight to its
 # sibling container, without ever reaching this app's own routing/auth -
 # mirroring the target integration shape (one wildcard entry point -> one
-# App Preview process -> internal Host-header dispatch). Requests for
+# Preview App process -> internal Host-header dispatch). Requests for
 # anything else (the app's own UI, or an unmatched/stale preview subdomain)
 # fall through unchanged.
 class HostRouter

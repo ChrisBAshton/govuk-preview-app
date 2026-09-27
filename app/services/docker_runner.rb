@@ -11,11 +11,11 @@ class DockerRunner
   end
 
   def image_tag
-    "govuk-app-preview/#{preview.app_name}:#{preview.slug}"
+    "govuk-preview-app/#{preview.app_name}:#{preview.slug}"
   end
 
   def container_name
-    "govuk-app-preview-#{preview.slug}"
+    "govuk-preview-app-#{preview.slug}"
   end
 
   def build!(checkout_path)
@@ -87,7 +87,7 @@ private
   # embedded DNS) from this app's own container - see HostRouter, and
   # DatabaseRunner, which both rely on this.
   def network_name
-    ENV.fetch("APP_PREVIEW_DOCKER_NETWORK", "govuk-app-preview_default")
+    ENV.fetch("PREVIEW_APP_DOCKER_NETWORK", "govuk-preview-app_default")
   end
 
   # SECRET_KEY_BASE is needed for any Rails app to boot at all in production
@@ -100,13 +100,13 @@ private
   # is simply a no-op). There's no separate asset-serving layer here, so
   # every preview needs Rails to serve its own assets directly.
   # GDS_SSO_STRATEGY: forces gds-sso's mock auth strategy regardless of
-  # RAILS_ENV (verified working for App Preview's own gds-sso setup, and for
+  # RAILS_ENV (verified working for Preview App's own gds-sso setup, and for
   # Whitehall/Publishing API's) - harmless for apps that don't use gds-sso.
   # REDIS_URL: govuk_sidekiq's railtie eagerly connects to Redis at boot for
   # *any* rake task, not just when a worker actually runs - so any app using
   # that gem (most GOV.UK admin apps) needs a reachable Redis just to boot.
   # We're not running previewed apps' own workers this pass, so pointing
-  # every preview at App Preview's own shared Redis (already on the same
+  # every preview at Preview App's own shared Redis (already on the same
   # network) is harmless - nothing reads the queues it'd write to.
   # Beyond these, each app's manifest entry can declare a fixed set of extra
   # env vars (e.g. pointing an app's Plek-resolved dependencies at real
