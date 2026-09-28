@@ -1,0 +1,53 @@
+name: Run RSpec
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "The branch, tag or SHA to checkout"
+        required: false
+        type: string
+
+jobs:
+  run-rspec:
+    name: Run RSpec
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Postgres
+        id: setup-postgres
+        uses: alphagov/govuk-infrastructure/.github/actions/setup-postgres@main
+
+      - name: Setup Redis
+        uses: alphagov/govuk-infrastructure/.github/actions/setup-redis@main
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          bundler-cache: true
+
+      - name: Initialize database
+        env:
+          RAILS_ENV: test
+          TEST_DATABASE_URL: ${{ steps.setup-postgres.outputs.db-url }}
+        run: bundle exec rails db:setup
+
+      # Without this, app/assets/builds/application.css doesn't exist, and
+      # Sprockets falls back to compiling .scss itself via its legacy
+      # SassC-based pipeline (not the sassc gem this app actually bundles
+      # nothing for, having opted into dartsass-rails instead) - failing
+      # with "cannot load such file -- sassc" on any request that renders
+      # a stylesheet_link_tag. The real Dockerfile never hits this: its
+      # `assets:precompile` step already builds this as a dependency.
+      - name: Build CSS
+        run: bundle exec rails dartsass:build
+
+      - name: Run RSpec
+        env:
+          RAILS_ENV: test
+          TEST_DATABASE_URL: ${{ steps.setup-postgres.outputs.db-url }}
+        run: bundle exec rspec

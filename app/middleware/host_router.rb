@@ -1,0 +1,33 @@
+# Dispatches requests for a running preview's hostname straight to its
+# sibling container, without ever reaching this app's own routing/auth -
+# mirroring the target integration shape (one wildcard entry point -> one
+# Preview App process -> internal Host-header dispatch). Requests for
+# anything else (the app's own UI, or an unmatched/stale preview subdomain)
+# fall through unchanged.
+class HostRouter
+  def initialize(app)
+    @app = app
+    @proxy = Rack::Proxy.new
+  end
+
+  def call(env)
+    preview = matching_preview(env)
+    return @app.call(env) unless preview
+
+    env["rack.backend"] = "http://#{DockerRunner.new(preview).container_name}:#{preview.port}"
+    @proxy.call(env)
+  end
+
+private
+
+  def matching_preview(env)
+    host = Rack::Request.new(env).host
+    suffix = ".#{Preview.base_domain}"
+    return nil unless host.end_with?(suffix)
+
+    # A dependency preview (e.g. Publishing API) is internal-only - it's an
+    # unauthenticated, state-mutating API with no host-published port, and
+    # must never be reachable at a guessable public-looking subdomain.
+    Preview.running.where(parent_id: nil).find_by(slug: host.delete_suffix(suffix))
+  end
+end

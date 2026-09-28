@@ -1,0 +1,59 @@
+# The GOV.UK apps that Preview App knows how to build and run previews for.
+#
+# This is a small manifest owned by Preview App itself (not a file each
+# previewable app's own repo has to carry).
+#
+# `env` is a fixed set of extra environment variables passed to the app's
+# container - e.g. pointing a read-only dependency (frontend's Content Store
+# client, via Plek) at the real GOV.UK service instead of running a preview
+# of it.
+#
+# `dependencies` names other apps in this manifest that must run as their
+# own real, dedicated preview (never shared across parents) before this app
+# starts - e.g. Whitehall needs a real, writable Publishing API, not the
+# real GOV.UK one. See PreviewBuilder.
+#
+# `database` declares the database container this app needs (one per
+# preview, not shared). Omit entirely for apps with no database (e.g.
+# frontend).
+frontend:
+  repo_url: https://github.com/alphagov/frontend.git
+  port_env_var: PORT
+  env:
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+
+publishing-api:
+  repo_url: https://github.com/alphagov/publishing-api.git
+  port_env_var: PORT
+  database:
+    adapter: postgresql
+    image: postgres:17
+  env:
+    # Publishing API's Sidekiq worker isn't run (not on the critical path
+    # for Whitehall's own save/publish or admin views - see the roadmap),
+    # but without this its config would still try a real AMQP connection
+    # to a RabbitMQ that doesn't exist here, were the worker ever started.
+    DISABLE_QUEUE_PUBLISHER: "1"
+
+whitehall:
+  repo_url: https://github.com/alphagov/whitehall.git
+  port_env_var: PORT
+  database:
+    adapter: mysql2
+    image: mysql:8
+  dependencies:
+    - publishing-api
+  env:
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+    # Not a real secret - Whitehall's own boot aborts without one at all
+    # (config/initializers/secrets_to_credentials.rb raises if unset); its
+    # own Dockerfile sets an equally dummy value at build time for the same
+    # reason ("unused_yet_required").
+    JWT_AUTH_SECRET: preview-jwt-secret
+    # Whitehall's session_store.rb marks its session cookie `secure: true`
+    # unless this is set (its own escape hatch, mirroring RAILS_ENV=test/
+    # development) - RAILS_ENV=production here, but our nginx has no TLS in
+    # front of it, so a Secure-flagged cookie would never be stored/sent by
+    # any browser, meaning sessions (and CSRF token verification) silently
+    # never persist across requests. Any truthy value works.
+    DISABLE_SECURE_COOKIES: "1"

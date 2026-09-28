@@ -1,0 +1,43 @@
+<% content_for :page_title, "Previews" %>
+
+<%= render "govuk_publishing_components/components/heading", text: "Previews", heading_level: 1, margin_bottom: 6 %>
+
+<%= render "govuk_publishing_components/components/button", text: "New preview", href: new_preview_path %>
+
+<%= render "govuk_publishing_components/components/table", {
+  head: [
+    { text: "App" },
+    { text: "Branch" },
+    { text: "Status" },
+    { text: "URL" },
+    { text: "" },
+  ],
+  rows: @previews.map do |preview|
+    app_name = preview.app_name
+    app_name += " (dependency of #{preview.parent.slug})" if preview.parent.present?
+
+    url_cell = if preview.parent.present?
+                 "Internal dependency"
+               elsif preview.running?
+                 link_to(preview.hostname, preview.url)
+               else
+                 ""
+               end
+
+    # Seed failures aren't fatal (see PreviewBuilder#seed_database) - a
+    # running preview can still carry a status_message warning that its
+    # seed data didn't load, distinct from a failed preview's own message.
+    status_cell = render("govuk_publishing_components/components/tag", text: preview.status)
+    if preview.running? && preview.status_message.present?
+      status_cell += tag.p(preview.status_message, class: "govuk-body-s govuk-!-margin-bottom-0 govuk-!-margin-top-1")
+    end
+
+    [
+      { text: app_name },
+      { text: preview.branch },
+      { text: status_cell },
+      { text: url_cell },
+      { text: preview.parent.blank? ? button_to("Delete", preview_path(preview), method: :delete, class: "govuk-button govuk-button--warning govuk-!-margin-bottom-0", data: { confirm: "Are you sure?" }) : "" },
+    ]
+  end,
+} %>
