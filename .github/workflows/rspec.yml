@@ -36,6 +36,16 @@ jobs:
           TEST_DATABASE_URL: ${{ steps.setup-postgres.outputs.db-url }}
         run: bundle exec rails db:setup
 
+      # Without this, app/assets/builds/application.css doesn't exist, and
+      # Sprockets falls back to compiling .scss itself via its legacy
+      # SassC-based pipeline (not the sassc gem this app actually bundles
+      # nothing for, having opted into dartsass-rails instead) - failing
+      # with "cannot load such file -- sassc" on any request that renders
+      # a stylesheet_link_tag. The real Dockerfile never hits this: its
+      # `assets:precompile` step already builds this as a dependency.
+      - name: Build CSS
+        run: bundle exec rails dartsass:build
+
       - name: Run RSpec
         env:
           RAILS_ENV: test
