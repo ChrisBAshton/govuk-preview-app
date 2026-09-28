@@ -22,6 +22,15 @@ class Checkout
 
     repo_url = GovukApps.find(preview.app_name).repo_url
 
+    # Belt and suspenders alongside GovukApps.all's own check: this is the
+    # actual dangerous operation (clone, then build+run as root via a
+    # Docker daemon Preview App has full access to), so it's worth
+    # refusing here too even though repo_url should already be
+    # guaranteed trusted by the time it gets this far.
+    unless GovukApps.trusted_repo_url?(repo_url)
+      raise GitError, "Refusing to clone untrusted repo_url: #{repo_url.inspect}"
+    end
+
     # Shallow: we only ever need the current state of one branch, not its
     # history - meaningfully faster, and less exposed to the kind of
     # mid-transfer network blip a full clone of a large repo hits more often.

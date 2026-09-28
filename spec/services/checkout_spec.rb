@@ -51,6 +51,15 @@ RSpec.describe Checkout do
 
       expect { checkout.checkout! }.to raise_error(described_class::GitError, /could not clone/)
     end
+
+    it "refuses to clone a repo_url outside the trusted GitHub org, without running any git command" do
+      untrusted = GovukApps::Definition.new(name: "frontend", repo_url: "https://github.com/not-alphagov/frontend.git")
+      allow(GovukApps).to receive(:find).with("frontend").and_return(untrusted)
+      allow(Open3).to receive(:capture3)
+
+      expect { checkout.checkout! }.to raise_error(described_class::GitError, /Refusing to clone untrusted repo_url/)
+      expect(Open3).not_to have_received(:capture3)
+    end
   end
 
   describe "#remove!" do

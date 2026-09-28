@@ -41,5 +41,42 @@ RSpec.describe GovukApps do
     it "returns nil for an unknown app" do
       expect(described_class.find("not-a-real-app")).to be_nil
     end
+
+    it "raises if the manifest ever declares a repo_url outside the alphagov org" do
+      described_class.instance_variable_set(:@all, nil)
+      allow(YAML).to receive(:load_file).and_return(
+        "evil-app" => { "repo_url" => "https://github.com/not-alphagov/evil.git", "port_env_var" => "PORT" },
+      )
+
+      expect { described_class.all }.to raise_error(/untrusted repo_url/)
+
+      described_class.instance_variable_set(:@all, nil)
+    end
+  end
+
+  describe ".trusted_repo_url?" do
+    it "is true for a real alphagov GitHub repo" do
+      expect(described_class.trusted_repo_url?("https://github.com/alphagov/whitehall.git")).to be(true)
+    end
+
+    it "is false for a different org" do
+      expect(described_class.trusted_repo_url?("https://github.com/not-alphagov/whitehall.git")).to be(false)
+    end
+
+    it "is false for a lookalike host" do
+      expect(described_class.trusted_repo_url?("https://github.com.evil.com/alphagov/whitehall.git")).to be(false)
+    end
+
+    it "is false for a userinfo trick pointing at a different real host" do
+      expect(described_class.trusted_repo_url?("https://github.com@evil.com/alphagov/whitehall.git")).to be(false)
+    end
+
+    it "is false for plain http" do
+      expect(described_class.trusted_repo_url?("http://github.com/alphagov/whitehall.git")).to be(false)
+    end
+
+    it "is false for a malformed URL" do
+      expect(described_class.trusted_repo_url?("not a url")).to be(false)
+    end
   end
 end
