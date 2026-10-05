@@ -102,6 +102,8 @@ class DockerRunner
   def stop!
     run!("docker", "stop", container_name) if running?
     run!("docker", "rm", container_name) if exists?
+
+    stop_worker!
   end
 
   def running?
@@ -111,6 +113,44 @@ class DockerRunner
 
   def exists?
     _out, _err, status = Open3.capture3("docker", "inspect", container_name)
+    status.success?
+  end
+
+  def worker_container_name
+    ContainerName.for(preview.slug, suffix: "-worker")
+  end
+
+  # A second, long-running container from the same built image, running the
+  # manifest's `worker_command` instead of the app's own web server - e.g.
+  # Publishing API's Sidekiq worker, which pushes published content
+  # downstream to Content Store.
+  def start_worker!(extra_env: {})
+    Open3.capture3("docker", "rm", "-f", worker_container_name)
+
+    run!(
+      "docker", "run", "-d",
+      "--name", worker_container_name,
+      "--network", network_name,
+      *env_args(extra_env),
+      image_tag,
+      *GovukApps.find(preview.app_name).worker_command
+    )
+  end
+
+  def stop_worker!
+    return unless GovukApps.find(preview.app_name).worker_command
+
+    run!("docker", "stop", worker_container_name) if worker_running?
+    run!("docker", "rm", worker_container_name) if worker_exists?
+  end
+
+  def worker_running?
+    out, = Open3.capture3("docker", "inspect", "-f", "{{.State.Running}}", worker_container_name)
+    out.strip == "true"
+  end
+
+  def worker_exists?
+    _out, _err, status = Open3.capture3("docker", "inspect", worker_container_name)
     status.success?
   end
 

@@ -10,7 +10,7 @@ Preview App is a Rails app plus a Sidekiq worker, orchestrating Docker container
 
 ### The manifest
 
-`config/govuk_apps.yml` (parsed by `lib/govuk_apps.rb`) lists every app Preview App knows how to build: its `repo_url`, `port_env_var`, an optional `database` (adapter + Docker image), optional `dependencies` (other manifest entries that must be running first), and a fixed `env` hash for anything that app needs pointed at a real GOV.UK service (e.g. a read-only Content Store) or a quirk of its own that needs a specific env var.
+`config/govuk_apps.yml` (parsed by `lib/govuk_apps.rb`) lists every app Preview App knows how to build: its `repo_url`, `port_env_var`, an optional `database` (adapter + Docker image), optional `dependencies` (other manifest entries that must be running first), optional `setup_tasks` and `worker_command` (see steps 6-7 below), `publicly_readable` for a dependency that's safe to make hostname-routable (see Routing), and a fixed `env` hash for anything that app needs pointed at a real GOV.UK service or a quirk of its own that needs a specific env var.
 
 ### Building a preview
 
@@ -22,13 +22,15 @@ Creating a `Preview` (an app name + branch) enqueues `PreviewsCreateJob`, which 
 4. **Build** (`DockerRunner#build!`) - `docker build`s the app's own Dockerfile, tagged `govuk-preview-app/<app>:<slug>`.
 5. **Database**, if the manifest declares one (`DatabaseRunner`) - starts a dedicated, disposable MySQL/Postgres container (never shared, no host-published port), then `DockerRunner#migrate!` creates the schema (`db:create db:schema:load` - deliberately not `db:seed` too, since `db:prepare` already seeds a freshly-created database itself) and `#seed!` runs `db:seed` as its own step.
 6. **Setup tasks**, if the manifest declares any (`DockerRunner#run_setup_task!`) - runs each named `bin/rails` task, in order, as its own one-off container. For data only the previewed app's own rake tasks know how to create (e.g. Whitehall needs a basic taxonomy in Publishing API before a document can be tagged to a topic - the same task govuk-docker's own Makefile runs) - this keeps that knowledge in config, not hardcoded into Preview App itself.
-7. **Start** (`DockerRunner#start!`) - runs the built image, publishing the preview's allocated port to the host *unless* this is a dependency preview. A dependency (e.g. Publishing API) is an unauthenticated, state-mutating API, so it's only ever reachable by its sibling containers via Docker's own embedded DNS - never published to the host or made hostname-routable.
+7. **Start** (`DockerRunner#start!`) - runs the built image, publishing the preview's allocated port to the host *unless* this is a dependency preview. If the manifest declares a `worker_command`, a second, long-running container also starts from the same image running that command instead of the app's own web server (`DockerRunner#start_worker!`) - e.g. Publishing API's Sidekiq worker, which pushes published content downstream to Content Store; without it, nothing would ever leave Publishing API's own database.
 
 Every container name and image tag is namespaced by the preview's `slug` (app + branch, parameterised) via `ContainerName`, which also truncates and hashes anything that would exceed the 63-character DNS label limit - container names double as hostnames for Docker's embedded resolver, and a long branch name can otherwise silently break cross-container networking.
 
 ### Routing
 
 `HostRouter` (a Rack middleware) inspects every request's `Host` header: if it matches a `running`, non-dependency preview's hostname (`<slug>.<PREVIEW_APP_BASE_DOMAIN>`), it proxies straight to that preview's own container over the shared Docker network, never touching Preview App's own routes or auth. Anything else - Preview App's own UI, or an unmatched/stale subdomain - falls through as normal.
+
+A dependency preview is normally internal-only - never hostname-routable, since most (e.g. Publishing API) are unauthenticated, state-mutating APIs. A manifest entry marked `publicly_readable: true` (e.g. Content Store) is the one exception: it's routable at a short, randomised hostname (`Preview#generate_public_hostname`), generated once per instance rather than derived from its place in the dependency tree - there's no value in the public URL expressing those relationships, and it'd otherwise be a long chain (e.g. `content-store-main-for-publishing-api-main-for-whitehall-my-branch`). Since a dependency is always dedicated to one parent and never shared, this hostname is unique to that specific instance - two Whitehall previews each get their own, entirely separate Content Store, never a single shared one that could end up with both posting to the same path.
 
 ### Tearing down
 

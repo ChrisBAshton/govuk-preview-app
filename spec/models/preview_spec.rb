@@ -91,6 +91,44 @@ RSpec.describe Preview do
 
       expect(preview.hostname).to eq("frontend-my-branch.govuk-preview-app.dev.gov.uk")
     end
+
+    it "uses the randomised public_hostname instead of the slug for a publicly_readable app" do
+      preview = create(:preview, app_name: "content-store", branch: "main")
+
+      expect(preview.hostname).to eq("#{preview.public_hostname}.govuk-preview-app.dev.gov.uk")
+      expect(preview.hostname).not_to include(preview.slug)
+    end
+  end
+
+  describe "#generate_public_hostname" do
+    it "sets a random hostname, prefixed by the app name, for a publicly_readable app" do
+      preview = create(:preview, app_name: "content-store", branch: "main")
+
+      expect(preview.public_hostname).to match(/\Acontent-store-[a-z0-9]{7}\z/)
+    end
+
+    it "sets a different public_hostname for each instance of the same app" do
+      first = create(:preview, app_name: "content-store", branch: "main")
+      second = create(:preview, app_name: "content-store", branch: "main", parent: create(:preview, app_name: "publishing-api", branch: "main"))
+
+      expect(first.public_hostname).not_to eq(second.public_hostname)
+    end
+
+    it "leaves public_hostname blank for an app that isn't publicly_readable" do
+      preview = create(:preview, app_name: "publishing-api", branch: "main")
+
+      expect(preview.public_hostname).to be_nil
+    end
+  end
+
+  describe "#publicly_readable?" do
+    it "is true for an app the manifest marks publicly_readable (content-store)" do
+      expect(create(:preview, app_name: "content-store", branch: "main").publicly_readable?).to be(true)
+    end
+
+    it "is false for an app the manifest doesn't mark publicly_readable (publishing-api)" do
+      expect(create(:preview, app_name: "publishing-api", branch: "main").publicly_readable?).to be(false)
+    end
   end
 
   describe "#url" do

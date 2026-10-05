@@ -23,11 +23,29 @@
 # be tagged to a topic, the same way govuk-docker's own Makefile sets this
 # up (see projects/whitehall/Makefile). Not fatal if a task fails (see
 # PreviewBuilder) - same reasoning as db:seed.
+#
+# `worker_command` starts a second, long-running container from the same
+# built image (e.g. Publishing API's Sidekiq worker, which actually pushes
+# published content downstream to Content Store - without it, nothing
+# ever leaves Publishing API's own database). See DockerRunner#start_worker!.
+#
+# `publicly_readable: true` makes a *dependency* preview reachable at a
+# short, stable "<app>-main.<base_domain>" hostname (e.g.
+# content-store-main...) instead of its full internal slug - see
+# HostRouter. Only for read-only, non-state-mutating APIs.
 frontend:
   repo_url: https://github.com/alphagov/frontend.git
   port_env_var: PORT
   env:
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+
+content-store:
+  repo_url: https://github.com/alphagov/content-store.git
+  port_env_var: PORT
+  database:
+    adapter: postgresql
+    image: postgres:17
+  publicly_readable: true
 
 publishing-api:
   repo_url: https://github.com/alphagov/publishing-api.git
@@ -35,11 +53,14 @@ publishing-api:
   database:
     adapter: postgresql
     image: postgres:17
+  dependencies:
+    - content-store
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
   env:
-    # Publishing API's Sidekiq worker isn't run (not on the critical path
-    # for Whitehall's own save/publish or admin views - see the roadmap),
-    # but without this its config would still try a real AMQP connection
-    # to a RabbitMQ that doesn't exist here, were the worker ever started.
+    # The queue publisher broadcasts over RabbitMQ to third-party downstream
+    # consumers (e.g. search-api, email-alert-api) - a separate mechanism
+    # from the Sidekiq worker's own HTTP push straight to Content Store, and
+    # there's no RabbitMQ here for it to connect to.
     DISABLE_QUEUE_PUBLISHER: "1"
 
 whitehall:

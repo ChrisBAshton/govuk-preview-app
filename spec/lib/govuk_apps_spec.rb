@@ -24,6 +24,8 @@ RSpec.describe GovukApps do
       expect(definition.dependencies).to eq([])
       expect(definition.database).to be_nil
       expect(definition.setup_tasks).to eq([])
+      expect(definition.worker_command).to be_nil
+      expect(definition.publicly_readable).to be(false)
     end
 
     it "parses a declared database" do
@@ -43,6 +45,18 @@ RSpec.describe GovukApps do
       definition = described_class.find("whitehall")
 
       expect(definition.setup_tasks).to eq(%w[taxonomy:populate_end_to_end_test_data taxonomy:rebuild_cache])
+    end
+
+    it "parses a declared worker_command and dependency" do
+      definition = described_class.find("publishing-api")
+
+      expect(definition.worker_command).to eq(%w[bundle exec sidekiq -C ./config/sidekiq.yml])
+      expect(definition.dependencies).to eq(%w[content-store])
+    end
+
+    it "parses publicly_readable" do
+      expect(described_class.find("content-store").publicly_readable).to be(true)
+      expect(described_class.find("publishing-api").publicly_readable).to be(false)
     end
 
     it "returns nil for an unknown app" do

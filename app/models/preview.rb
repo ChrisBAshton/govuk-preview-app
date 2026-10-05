@@ -20,6 +20,7 @@ class Preview < ApplicationRecord
   validates :slug, presence: true, uniqueness: true
 
   before_validation :generate_slug, on: :create
+  before_validation :generate_public_hostname, on: :create
 
   def self.base_domain
     ENV.fetch("PREVIEW_APP_BASE_DOMAIN", "govuk-preview-app.dev.gov.uk")
@@ -39,8 +40,22 @@ class Preview < ApplicationRecord
     ENV["PREVIEW_APP_NGINX_PORT"]
   end
 
+  # Whether this preview's app is allowed to be hostname-routable even when
+  # it's a dependency (see HostRouter) - only for genuinely read-only,
+  # non-mutating APIs (e.g. Content Store), never for an unauthenticated,
+  # state-mutating one (e.g. Publishing API).
+  def publicly_readable?
+    GovukApps.find(app_name)&.publicly_readable || false
+  end
+
+  # A publicly_readable dependency (e.g. Content Store) is reachable at this
+  # short, randomised hostname instead of its real (potentially long, since
+  # it chains through every parent in its dependency tree) slug - there's no
+  # value in the public URL expressing those relationships, and a random
+  # token per instance keeps two separate previews' Content Stores from ever
+  # looking like the same shared one (see HostRouter).
   def hostname
-    "#{slug}.#{self.class.base_domain}"
+    "#{public_hostname || slug}.#{self.class.base_domain}"
   end
 
   def url
@@ -60,5 +75,17 @@ private
     # publishing-api/main would collide.
     base = "#{base}-for-#{parent.slug}" if parent.present?
     self.slug ||= base.parameterize
+  end
+
+  def generate_public_hostname
+    return unless publicly_readable?
+
+    loop do
+      candidate = "#{app_name}-#{SecureRandom.alphanumeric(7).downcase}".parameterize
+      next if self.class.exists?(public_hostname: candidate)
+
+      self.public_hostname = candidate
+      break
+    end
   end
 end

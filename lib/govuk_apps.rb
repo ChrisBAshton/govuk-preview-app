@@ -12,7 +12,10 @@ module GovukApps
   TRUSTED_GITHUB_ORG = "alphagov".freeze
 
   Database = Struct.new(:adapter, :image, keyword_init: true)
-  Definition = Struct.new(:name, :repo_url, :port_env_var, :env, :dependencies, :database, :setup_tasks, keyword_init: true)
+  Definition = Struct.new(
+    :name, :repo_url, :port_env_var, :env, :dependencies, :database, :setup_tasks,
+    :worker_command, :publicly_readable, keyword_init: true
+  )
 
   def self.all
     @all ||= YAML.load_file(Rails.root.join("config/govuk_apps.yml")).map do |name, attrs|
@@ -35,6 +38,8 @@ module GovukApps
         dependencies: attrs.fetch("dependencies", []),
         database: database,
         setup_tasks: attrs.fetch("setup_tasks", []),
+        worker_command: attrs["worker_command"],
+        publicly_readable: attrs.fetch("publicly_readable", false),
       )
     end
   end

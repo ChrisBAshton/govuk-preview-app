@@ -56,4 +56,27 @@ RSpec.describe HostRouter do
 
     expect(status).to eq(200)
   end
+
+  it "proxies a dependency preview whose app is publicly_readable, at its randomised public hostname" do
+    parent = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running, port: 20_000)
+    dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent, status: :running, port: 20_001)
+    proxy = instance_double(Rack::Proxy, call: [200, {}, %w[proxied]])
+    allow(Rack::Proxy).to receive(:new).and_return(proxy)
+    router = described_class.new(app)
+
+    router.call(env_for(dependent.hostname))
+
+    expect(proxy).to have_received(:call).with(
+      hash_including("rack.backend" => "http://#{DockerRunner.new(dependent).container_name}:20001"),
+    )
+  end
+
+  it "does not proxy a publicly_readable dependency preview by its real (internal) slug" do
+    parent = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running, port: 20_000)
+    dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent, status: :running, port: 20_001)
+
+    status, = router.call(env_for("#{dependent.slug}.#{Preview.base_domain}"))
+
+    expect(status).to eq(200)
+  end
 end

@@ -204,6 +204,68 @@ RSpec.describe DockerRunner do
     end
   end
 
+  describe "#worker_container_name" do
+    it "is namespaced by the preview's slug with a -worker suffix" do
+      preview = create(:preview, app_name: "publishing-api", branch: "my-branch")
+
+      expect(described_class.new(preview).worker_container_name).to eq("govuk-preview-app-#{preview.slug}-worker")
+    end
+  end
+
+  describe "#start_worker!" do
+    it "removes any stale worker container first, then runs the manifest's worker_command" do
+      preview = create(:preview, app_name: "publishing-api", branch: "my-branch", port: 20_123)
+      worker_runner = described_class.new(preview)
+      calls = []
+      allow(Open3).to receive(:capture3) do |*args|
+        calls << args
+        ["abc123\n", "", success]
+      end
+
+      worker_runner.start_worker!(extra_env: { "DATABASE_URL" => "postgresql://db/app_preview" })
+
+      expect(calls).to include(["docker", "rm", "-f", worker_runner.worker_container_name])
+
+      run_args = calls.find { |args| args[0..2] == ["docker", "run", "-d"] }
+      expect(run_args[3..4]).to eq(["--name", worker_runner.worker_container_name])
+      expect(run_args[5..6]).to eq(["--network", "govuk-preview-app_default"])
+      expect(run_args.drop_while { |a| a != worker_runner.image_tag })
+        .to eq([worker_runner.image_tag, "bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"])
+
+      env_args = run_args[7...run_args.index(worker_runner.image_tag)]
+      env = env_args.each_slice(2).to_h { |_flag, kv| kv.split("=", 2) }
+      expect(env["DATABASE_URL"]).to eq("postgresql://db/app_preview")
+    end
+  end
+
+  describe "#stop_worker!" do
+    it "stops and removes the worker container if it exists and is running" do
+      preview = create(:preview, app_name: "publishing-api", branch: "my-branch")
+      worker_runner = described_class.new(preview)
+      allow(Open3).to receive(:capture3)
+        .with("docker", "inspect", "-f", "{{.State.Running}}", worker_runner.worker_container_name)
+        .and_return(["true\n", "", success])
+      allow(Open3).to receive(:capture3)
+        .with("docker", "inspect", worker_runner.worker_container_name)
+        .and_return(["", "", success])
+      allow(Open3).to receive(:capture3).with("docker", "stop", worker_runner.worker_container_name).and_return(["", "", success])
+      allow(Open3).to receive(:capture3).with("docker", "rm", worker_runner.worker_container_name).and_return(["", "", success])
+
+      worker_runner.stop_worker!
+
+      expect(Open3).to have_received(:capture3).with("docker", "stop", worker_runner.worker_container_name)
+      expect(Open3).to have_received(:capture3).with("docker", "rm", worker_runner.worker_container_name)
+    end
+
+    it "does nothing at all if the app declares no worker_command" do
+      allow(Open3).to receive(:capture3)
+
+      runner.stop_worker!
+
+      expect(Open3).not_to have_received(:capture3)
+    end
+  end
+
   describe "#stop!" do
     it "stops and removes the container if it exists and is running" do
       allow(Open3).to receive(:capture3)
@@ -234,6 +296,31 @@ RSpec.describe DockerRunner do
 
       expect(Open3).not_to have_received(:capture3).with("docker", "stop", anything)
       expect(Open3).not_to have_received(:capture3).with("docker", "rm", anything)
+    end
+
+    it "also stops the worker container if the app declares a worker_command" do
+      preview = create(:preview, app_name: "publishing-api", branch: "my-branch")
+      worker_runner = described_class.new(preview)
+      not_found = instance_double(Process::Status, success?: false)
+      allow(Open3).to receive(:capture3)
+        .with("docker", "inspect", "-f", "{{.State.Running}}", worker_runner.container_name)
+        .and_return(["", "no such container", not_found])
+      allow(Open3).to receive(:capture3)
+        .with("docker", "inspect", worker_runner.container_name)
+        .and_return(["", "no such container", not_found])
+      allow(Open3).to receive(:capture3)
+        .with("docker", "inspect", "-f", "{{.State.Running}}", worker_runner.worker_container_name)
+        .and_return(["true\n", "", success])
+      allow(Open3).to receive(:capture3)
+        .with("docker", "inspect", worker_runner.worker_container_name)
+        .and_return(["", "", success])
+      allow(Open3).to receive(:capture3).with("docker", "stop", worker_runner.worker_container_name).and_return(["", "", success])
+      allow(Open3).to receive(:capture3).with("docker", "rm", worker_runner.worker_container_name).and_return(["", "", success])
+
+      worker_runner.stop!
+
+      expect(Open3).to have_received(:capture3).with("docker", "stop", worker_runner.worker_container_name)
+      expect(Open3).to have_received(:capture3).with("docker", "rm", worker_runner.worker_container_name)
     end
   end
 end

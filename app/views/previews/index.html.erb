@@ -13,12 +13,12 @@
     { text: "" },
   ],
   rows: previews_with_depth(@previews).map do |preview, depth|
-    url_cell = if preview.parent.present?
-                 "Internal dependency"
-               elsif preview.running?
-                 link_to(preview.hostname, preview.url)
-               else
+    url_cell = if !preview.running?
                  ""
+               elsif preview.parent.present? && !preview.publicly_readable?
+                 "Internal dependency"
+               else
+                 link_to(preview.hostname, preview.url)
                end
 
     status_cell = render("govuk_publishing_components/components/tag", text: preview.status)

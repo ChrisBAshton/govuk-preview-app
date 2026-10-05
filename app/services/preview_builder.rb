@@ -47,12 +47,15 @@ class PreviewBuilder
 
     app.setup_tasks.each { |task| docker.run_setup_task!(task, extra_env: extra_env) }
 
-    # Dependency previews are internal-only: reachable by sibling containers
-    # via Docker's embedded DNS, never published to the host or made
-    # hostname-routable (see HostRouter) - Publishing API, the only
-    # dependency today, is an unauthenticated, state-mutating API that
-    # shouldn't be reachable at a guessable public-looking subdomain.
+    # Dependency previews are internal-only by default: reachable by sibling
+    # containers via Docker's embedded DNS, never published to the host -
+    # most dependencies (e.g. Publishing API) are unauthenticated, state-
+    # mutating APIs that shouldn't be reachable at a guessable public-
+    # looking subdomain. A dependency can opt into a stable, public hostname
+    # via the manifest's `publicly_readable` (see HostRouter) - only safe
+    # for genuinely read-only, non-mutating APIs (e.g. Content Store).
     container_id = docker.start!(extra_env: extra_env, publish_port: preview.parent_id.nil?)
+    docker.start_worker!(extra_env: extra_env) if app.worker_command
 
     preview.update!(status: :running, container_id: container_id)
   rescue *RESCUED_ERRORS => e
