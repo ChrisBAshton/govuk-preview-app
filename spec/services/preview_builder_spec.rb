@@ -132,11 +132,11 @@ RSpec.describe PreviewBuilder do
       end
     end
 
-    context "with an app that has a dependency (whitehall -> publishing-api -> content-store)" do
+    context "with an app that has multiple dependencies (whitehall -> publishing-api -> content-store, and frontend)" do
       it "builds a dedicated dependent preview first and injects its PLEK_SERVICE_*_URI into the parent" do
         preview = create(:preview, app_name: "whitehall", branch: "my-branch")
         allow(ConfigOverrides).to receive(:new).and_return(instance_double(ConfigOverrides, write!: nil))
-        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002)
+        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002, 20_003)
         allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "mysql2://db/app_preview"))
         allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
 
@@ -148,7 +148,7 @@ RSpec.describe PreviewBuilder do
 
         described_class.new(preview).build!
 
-        dependent = preview.reload.dependents.sole
+        dependent = preview.reload.dependents.find_by!(app_name: "publishing-api")
         expect(dependent).to have_attributes(app_name: "publishing-api", branch: "main", status: "running")
 
         expect(docker).to have_received(:start!).with(
@@ -161,22 +161,44 @@ RSpec.describe PreviewBuilder do
       it "builds the dependency's own dependency too (content-store, two levels down)" do
         preview = create(:preview, app_name: "whitehall", branch: "my-branch")
         allow(ConfigOverrides).to receive(:new).and_return(instance_double(ConfigOverrides, write!: nil))
-        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002)
+        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002, 20_003)
         allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "db-url"))
         allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
         allow(DockerRunner).to receive(:new) { |p| generic_dependent_docker(p) }
 
         described_class.new(preview).build!
 
-        publishing_api = preview.reload.dependents.sole
+        publishing_api = preview.reload.dependents.find_by!(app_name: "publishing-api")
         content_store = publishing_api.dependents.sole
         expect(content_store).to have_attributes(app_name: "content-store", branch: "main", status: "running")
+      end
+
+      it "gives frontend the real local Content Store URI resolved by its sibling publishing-api dependency, not frontend's own real-GOV.UK default" do
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        allow(ConfigOverrides).to receive(:new).and_return(instance_double(ConfigOverrides, write!: nil))
+        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002, 20_003)
+        allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "db-url"))
+        allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
+
+        dependent_dockers = Hash.new { |h, p| h[p] = generic_dependent_docker(p) }
+        allow(DockerRunner).to receive(:new) { |p| p.parent_id.nil? ? generic_dependent_docker(p) : dependent_dockers[p] }
+
+        described_class.new(preview).build!
+
+        publishing_api = preview.reload.dependents.find_by!(app_name: "publishing-api")
+        content_store = publishing_api.dependents.sole
+        frontend = preview.reload.dependents.find_by!(app_name: "frontend")
+
+        expect(dependent_dockers[frontend]).to have_received(:start!).with(
+          extra_env: hash_including("PLEK_SERVICE_CONTENT_STORE_URI" => "http://govuk-preview-app-#{content_store.slug}:#{content_store.port}"),
+          publish_port: false,
+        )
       end
 
       it "does not publish a host port for any dependency, only for the top-level preview" do
         preview = create(:preview, app_name: "whitehall", branch: "my-branch")
         allow(ConfigOverrides).to receive(:new).and_return(instance_double(ConfigOverrides, write!: nil))
-        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002)
+        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002, 20_003)
         allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "url"))
         allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
 
@@ -192,18 +214,20 @@ RSpec.describe PreviewBuilder do
 
         described_class.new(preview).build!
 
-        publishing_api = preview.reload.dependents.sole
+        publishing_api = preview.reload.dependents.find_by!(app_name: "publishing-api")
         content_store = publishing_api.dependents.sole
+        frontend = preview.reload.dependents.find_by!(app_name: "frontend")
 
         expect(dependent_dockers[publishing_api]).to have_received(:start!).with(hash_including(publish_port: false))
         expect(dependent_dockers[content_store]).to have_received(:start!).with(hash_including(publish_port: false))
+        expect(dependent_dockers[frontend]).to have_received(:start!).with(hash_including(publish_port: false))
         expect(parent_docker).to have_received(:start!).with(hash_including(publish_port: true))
       end
 
       it "marks the parent failed with a distinct message when the dependency fails, without touching the dependency's own message" do
         preview = create(:preview, app_name: "whitehall", branch: "my-branch")
         allow(ConfigOverrides).to receive(:new).and_return(instance_double(ConfigOverrides, write!: nil))
-        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002)
+        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002, 20_003)
         allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "db-url"))
         allow(DockerRunner).to receive(:new) { |p| generic_dependent_docker(p) }
         allow(Checkout).to receive(:new) do |p|
@@ -218,11 +242,14 @@ RSpec.describe PreviewBuilder do
 
         described_class.new(preview).build!
 
-        dependent = preview.reload.dependents.sole
+        dependent = preview.reload.dependents.find_by!(app_name: "publishing-api")
         expect(dependent).to have_attributes(status: "failed", status_message: "fatal: could not clone publishing-api")
         expect(preview.status).to eq("failed")
         expect(preview.status_message).to include("dependency publishing-api failed to start")
         expect(preview.status_message).not_to eq(dependent.status_message)
+        # publishing-api, whitehall's first declared dependency, fails before
+        # frontend (declared after it) is ever attempted.
+        expect(preview.reload.dependents.pluck(:app_name)).to eq(%w[publishing-api])
       end
     end
 
@@ -230,7 +257,7 @@ RSpec.describe PreviewBuilder do
       it "runs each configured task, in order, after seeding" do
         preview = create(:preview, app_name: "whitehall", branch: "my-branch")
         allow(ConfigOverrides).to receive(:new).and_return(instance_double(ConfigOverrides, write!: nil))
-        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002)
+        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002, 20_003)
         allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "mysql2://db/app_preview"))
         allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
 
@@ -250,7 +277,7 @@ RSpec.describe PreviewBuilder do
       it "marks the preview failed when a setup task fails, without running later tasks" do
         preview = create(:preview, app_name: "whitehall", branch: "my-branch")
         allow(ConfigOverrides).to receive(:new).and_return(instance_double(ConfigOverrides, write!: nil))
-        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002)
+        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001, 20_002, 20_003)
         allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "mysql2://db/app_preview"))
         allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
 

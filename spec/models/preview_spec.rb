@@ -92,30 +92,39 @@ RSpec.describe Preview do
       expect(preview.hostname).to eq("frontend-my-branch.govuk-preview-app.dev.gov.uk")
     end
 
-    it "uses the randomised public_hostname instead of the slug for a publicly_readable app" do
-      preview = create(:preview, app_name: "content-store", branch: "main")
+    it "uses the randomised public_hostname instead of the slug for a publicly_readable dependency" do
+      parent = create(:preview, app_name: "publishing-api", branch: "my-branch")
+      dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent)
 
-      expect(preview.hostname).to eq("#{preview.public_hostname}.govuk-preview-app.dev.gov.uk")
-      expect(preview.hostname).not_to include(preview.slug)
+      expect(dependent.hostname).to eq("#{dependent.public_hostname}.govuk-preview-app.dev.gov.uk")
+      expect(dependent.hostname).not_to include(dependent.slug)
     end
   end
 
   describe "#generate_public_hostname" do
-    it "sets a random hostname, prefixed by the app name, for a publicly_readable app" do
-      preview = create(:preview, app_name: "content-store", branch: "main")
+    it "sets a random hostname, prefixed by the app name, for a publicly_readable dependency" do
+      parent = create(:preview, app_name: "publishing-api", branch: "my-branch")
+      dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent)
 
-      expect(preview.public_hostname).to match(/\Acontent-store-[a-z0-9]{7}\z/)
+      expect(dependent.public_hostname).to match(/\Acontent-store-[a-z0-9]{7}\z/)
     end
 
     it "sets a different public_hostname for each instance of the same app" do
-      first = create(:preview, app_name: "content-store", branch: "main")
-      second = create(:preview, app_name: "content-store", branch: "main", parent: create(:preview, app_name: "publishing-api", branch: "main"))
+      first = create(:preview, app_name: "content-store", branch: "main", parent: create(:preview, app_name: "publishing-api", branch: "branch-a"))
+      second = create(:preview, app_name: "content-store", branch: "main", parent: create(:preview, app_name: "publishing-api", branch: "branch-b"))
 
       expect(first.public_hostname).not_to eq(second.public_hostname)
     end
 
-    it "leaves public_hostname blank for an app that isn't publicly_readable" do
-      preview = create(:preview, app_name: "publishing-api", branch: "main")
+    it "leaves public_hostname blank for a dependency that isn't publicly_readable" do
+      parent = create(:preview, app_name: "whitehall", branch: "my-branch")
+      dependent = create(:preview, app_name: "publishing-api", branch: "main", parent: parent)
+
+      expect(dependent.public_hostname).to be_nil
+    end
+
+    it "leaves public_hostname blank for a standalone, top-level preview, even if its app is publicly_readable" do
+      preview = create(:preview, app_name: "content-store", branch: "main")
 
       expect(preview.public_hostname).to be_nil
     end

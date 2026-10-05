@@ -78,7 +78,10 @@ private
   end
 
   def generate_public_hostname
-    return unless publicly_readable?
+    # Only for a dependency - a standalone top-level preview already gets a
+    # perfectly good, readable hostname from its own slug, and has none of
+    # the "slug reveals its whole dependency chain" problem this solves.
+    return unless parent.present? && publicly_readable?
 
     loop do
       candidate = "#{app_name}-#{SecureRandom.alphanumeric(7).downcase}".parameterize

@@ -20,11 +20,20 @@ class PreviewBuilder
     @preview = preview
   end
 
-  def build!
-    return if preview.running?
+  # inherited_env carries PLEK_SERVICE_*_URI entries resolved by dependencies
+  # already built *before* this preview, in the same parent's manifest list
+  # (see build_dependencies!) - e.g. Whitehall's `frontend` dependency,
+  # declared after `publishing-api`, inherits the real local Content Store
+  # address that publishing-api's own `content-store` dependency resolved.
+  # Returns the same kind of hash (this preview's own inherited env, plus
+  # whatever its own dependencies resolved) so a caller building further
+  # siblings afterwards can pass it on in turn.
+  def build!(inherited_env: {})
+    return inherited_env if preview.running?
 
     app = GovukApps.find(preview.app_name)
-    extra_env = build_dependencies!(app)
+    dependency_env = inherited_env.merge(build_dependencies!(app, inherited_env))
+    extra_env = dependency_env
 
     checkout = Checkout.new(preview)
     docker = DockerRunner.new(preview)
@@ -58,16 +67,19 @@ class PreviewBuilder
     docker.start_worker!(extra_env: extra_env) if app.worker_command
 
     preview.update!(status: :running, container_id: container_id)
+
+    dependency_env
   rescue *RESCUED_ERRORS => e
     preview.update!(status: :failed, status_message: e.message.truncate(255))
+    inherited_env
   end
 
 private
 
-  def build_dependencies!(app)
+  def build_dependencies!(app, inherited_env)
     app.dependencies.each_with_object({}) do |dep_name, env|
       dependent = Preview.create!(app_name: dep_name, branch: "main", parent: preview)
-      self.class.new(dependent).build!
+      resolved_env = self.class.new(dependent).build!(inherited_env: inherited_env.merge(env))
 
       unless dependent.reload.running?
         raise DependencyError, "dependency #{dep_name} failed to start: #{dependent.status_message}"
@@ -75,6 +87,7 @@ private
 
       dep_container_name = DockerRunner.new(dependent).container_name
       env["PLEK_SERVICE_#{dep_name.upcase.tr('-', '_')}_URI"] = "http://#{dep_container_name}:#{dependent.port}"
+      env.merge!(resolved_env)
     end
   end
 end

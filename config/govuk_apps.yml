@@ -11,7 +11,12 @@
 # `dependencies` names other apps in this manifest that must run as their
 # own real, dedicated preview (never shared across parents) before this app
 # starts - e.g. Whitehall needs a real, writable Publishing API, not the
-# real GOV.UK one. See PreviewBuilder.
+# real GOV.UK one. See PreviewBuilder. Order matters: each dependency can
+# see the resolved PLEK_SERVICE_*_URI of every dependency declared *before*
+# it in the same list (so Whitehall's `frontend` dependency, declared after
+# `publishing-api`, inherits the real local Content Store address that
+# publishing-api's own `content-store` dependency resolved - not frontend's
+# own static, real-GOV.UK default below).
 #
 # `database` declares the database container this app needs (one per
 # preview, not shared). Omit entirely for apps with no database (e.g.
@@ -30,12 +35,15 @@
 # ever leaves Publishing API's own database). See DockerRunner#start_worker!.
 #
 # `publicly_readable: true` makes a *dependency* preview reachable at a
-# short, stable "<app>-main.<base_domain>" hostname (e.g.
-# content-store-main...) instead of its full internal slug - see
-# HostRouter. Only for read-only, non-state-mutating APIs.
+# short, randomised hostname (e.g. content-store-mvym1ob...) instead of its
+# full, dependency-chain-shaped slug - see HostRouter and
+# Preview#generate_public_hostname. Only for read-only, non-state-mutating
+# APIs. Has no effect on a preview with no parent (a standalone top-level
+# preview already gets a perfectly good, readable hostname from its slug).
 frontend:
   repo_url: https://github.com/alphagov/frontend.git
   port_env_var: PORT
+  publicly_readable: true
   env:
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
 
@@ -71,6 +79,7 @@ whitehall:
     image: mysql:8
   dependencies:
     - publishing-api
+    - frontend
   setup_tasks:
     - taxonomy:populate_end_to_end_test_data
     - taxonomy:rebuild_cache

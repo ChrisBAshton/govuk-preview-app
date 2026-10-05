@@ -25,7 +25,10 @@ RSpec.describe GovukApps do
       expect(definition.database).to be_nil
       expect(definition.setup_tasks).to eq([])
       expect(definition.worker_command).to be_nil
-      expect(definition.publicly_readable).to be(false)
+    end
+
+    it "returns false for publicly_readable when the manifest doesn't declare it" do
+      expect(described_class.find("whitehall").publicly_readable).to be(false)
     end
 
     it "parses a declared database" do
@@ -34,10 +37,10 @@ RSpec.describe GovukApps do
       expect(definition.database).to have_attributes(adapter: "postgresql", image: "postgres:17")
     end
 
-    it "parses declared dependencies" do
+    it "parses declared dependencies, in order" do
       definition = described_class.find("whitehall")
 
-      expect(definition.dependencies).to eq(%w[publishing-api])
+      expect(definition.dependencies).to eq(%w[publishing-api frontend])
       expect(definition.database).to have_attributes(adapter: "mysql2", image: "mysql:8")
     end
 
@@ -56,6 +59,7 @@ RSpec.describe GovukApps do
 
     it "parses publicly_readable" do
       expect(described_class.find("content-store").publicly_readable).to be(true)
+      expect(described_class.find("frontend").publicly_readable).to be(true)
       expect(described_class.find("publishing-api").publicly_readable).to be(false)
     end
 
