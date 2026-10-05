@@ -53,8 +53,8 @@ docker compose up --build
 
 This builds and starts Postgres, Redis, the app, a Sidekiq worker, and a small nginx reverse proxy fronting all of it at `*.govuk-preview-app.dev.gov.uk` - mirroring the wildcard-subdomain routing Preview App uses on integration (see `HostRouter`). The database is prepared and seeded automatically; no separate setup step is needed on a fresh checkout.
 
-Visit <http://govuk-preview-app.dev.gov.uk/previews>.
+Visit <http://govuk-preview-app.dev.gov.uk:8080/previews>.
 
-Once a preview reaches "running", it's reachable directly at its own hostname, e.g. `http://frontend-my-branch.govuk-preview-app.dev.gov.uk/`.
+Once a preview reaches "running", it's reachable directly at its own hostname, e.g. `http://frontend-my-branch.govuk-preview-app.dev.gov.uk:8080/`.
 
-**Known conflict**: the local nginx proxy binds host port 80 by default, same as govuk-docker's own `nginx-proxy` - the two can't both be `up` at once. Set `PREVIEW_APP_NGINX_PORT` to use a different port if you need both running simultaneously.
+The local nginx proxy defaults to host port 8080, not 80 - govuk-docker's own `nginx-proxy` already binds port 80 on most GOV.UK dev machines, and only one process can hold a given host port at a time (this is an OS-level TCP binding constraint, not a hostname-routing one, so it'd happen regardless of which `*.dev.gov.uk` hostname either proxy is fronting). Set `PREVIEW_APP_NGINX_PORT` to use a different port if 8080 is also taken. This is purely a local-dev concern - a real Kubernetes deployment has no equivalent host-port conflict (each pod gets its own network namespace) and needs no corresponding config.

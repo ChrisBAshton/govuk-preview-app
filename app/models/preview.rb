@@ -31,12 +31,21 @@ class Preview < ApplicationRecord
     ENV.fetch("PREVIEW_APP_SCHEME", "http")
   end
 
+  # Same env var nginx's own port mapping uses (docker-compose.yml) - kept
+  # in sync so links rendered here are directly clickable locally, while
+  # staying blank for a real deployment (fronted by a real Ingress on the
+  # standard ports, no override needed).
+  def self.external_port
+    ENV["PREVIEW_APP_NGINX_PORT"]
+  end
+
   def hostname
     "#{slug}.#{self.class.base_domain}"
   end
 
   def url
-    "#{self.class.scheme}://#{hostname}"
+    port_suffix = self.class.external_port.presence && ":#{self.class.external_port}"
+    "#{self.class.scheme}://#{hostname}#{port_suffix}"
   end
 
 private

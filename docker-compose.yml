@@ -45,6 +45,9 @@ services:
       # dev; the base image defaults to RAILS_ENV=production, which requires
       # this to be set at all just to boot.
       SECRET_KEY_BASE: 7ede6f11e4d21043e035b427884d36bcd4afe0bd7e5fa1eb77ad66349c2a7c01
+      # Read by Preview#url so the previews list's links are clickable -
+      # must match nginx's own port mapping below.
+      PREVIEW_APP_NGINX_PORT: ${PREVIEW_APP_NGINX_PORT:-8080}
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,7 +93,7 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
-      - "${PREVIEW_APP_NGINX_PORT:-80}:80"
+      - "${PREVIEW_APP_NGINX_PORT:-8080}:80"
     depends_on:
       - app
 
