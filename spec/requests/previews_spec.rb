@@ -16,6 +16,13 @@ RSpec.describe "Previews" do
       expect(response.body).to include(preview.branch)
     end
 
+    it "shows the Dashboard/Switch app navigation" do
+      get previews_path
+
+      expect(response.body).to include(">Dashboard<")
+      expect(response.body).to include(">Switch app<")
+    end
+
     it "links a publicly_readable dependency at its own public hostname, rather than showing it as internal-only" do
       parent = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running)
       dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent, status: :running)

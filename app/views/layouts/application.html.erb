@@ -12,9 +12,13 @@
     environment: environment,
     navigation_items: [
       {
-        text: "Previews",
+        text: "Dashboard",
         href: previews_path,
         active: request.path.start_with?(previews_path),
+      },
+      {
+        text: "Switch app",
+        href: Plek.find("signon"),
       },
     ],
   } %>
