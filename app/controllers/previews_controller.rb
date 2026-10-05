@@ -1,6 +1,8 @@
 class PreviewsController < ApplicationController
   def index
-    @previews = Preview.order(created_at: :desc)
+    # Top-level only - the view nests each one's dependents (recursively)
+    # beneath it via PreviewsHelper#previews_with_depth.
+    @previews = Preview.where(parent_id: nil).order(created_at: :desc)
   end
 
   def new

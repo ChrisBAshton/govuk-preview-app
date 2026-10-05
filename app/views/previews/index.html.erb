@@ -12,10 +12,7 @@
     { text: "URL" },
     { text: "" },
   ],
-  rows: @previews.map do |preview|
-    app_name = preview.app_name
-    app_name += " (dependency of #{preview.parent.slug})" if preview.parent.present?
-
+  rows: previews_with_depth(@previews).map do |preview, depth|
     url_cell = if preview.parent.present?
                  "Internal dependency"
                elsif preview.running?
@@ -30,7 +27,7 @@
     end
 
     [
-      { text: app_name },
+      { text: preview_app_name_cell(preview, depth) },
       { text: preview.branch },
       { text: status_cell },
       { text: url_cell },
