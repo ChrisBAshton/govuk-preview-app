@@ -61,11 +61,8 @@ class DockerRunner
   # long-running container begins. Deliberately db:create db:schema:load,
   # not db:prepare: db:prepare also seeds the database itself the first
   # time it creates one (see ActiveRecord::Tasks::DatabaseTasks#
-  # prepare_all), which isn't safe to treat as fatal alongside our own
-  # explicit #seed! call below (some apps' seeds.rb isn't safe to run
-  # twice - see #seed!) - schema/migration failure is a real "this preview
-  # can't run at all" condition, so this step is still fatal (see
-  # PreviewBuilder).
+  # prepare_all), which would double-seed alongside our own explicit
+  # #seed! call below.
   def migrate!(extra_env: {})
     run!(
       "docker", "run", "--rm",
@@ -76,14 +73,8 @@ class DockerRunner
     )
   end
 
-  # A one-off, auto-removed container running an app's db/seeds.rb.
-  # Deliberately a separate step from migrate! (and, unlike it, not fatal -
-  # see PreviewBuilder): some apps' seeds aren't safe to previewed on an
-  # old, unmaintained branch (e.g. a Whitehall branch whose seeds.rb calls
-  # the non-idempotent Organisation.skip_callback more than once always
-  # raises) - a preview should still come up and be usable even without
-  # seed data, rather than fail outright over what's fundamentally a
-  # cosmetic/convenience step.
+  # A one-off, auto-removed container running an app's db/seeds.rb,
+  # deliberately a separate step from migrate! (see above).
   def seed!(extra_env: {})
     run!(
       "docker", "run", "--rm",
@@ -91,6 +82,20 @@ class DockerRunner
       *env_args(extra_env),
       image_tag,
       "bin/rails", "db:seed"
+    )
+  end
+
+  # A one-off, auto-removed container running an arbitrary `bin/rails` task -
+  # see the manifest's `setup_tasks` (e.g. seeding a dependency with data
+  # only this app's own fixtures/rake tasks know how to create, rather than
+  # Preview App hardcoding that knowledge itself).
+  def run_setup_task!(task, extra_env: {})
+    run!(
+      "docker", "run", "--rm",
+      "--network", network_name,
+      *env_args(extra_env),
+      image_tag,
+      "bin/rails", task
     )
   end
 

@@ -24,11 +24,8 @@
                  ""
                end
 
-    # Seed failures aren't fatal (see PreviewBuilder#seed_database) - a
-    # running preview can still carry a status_message warning that its
-    # seed data didn't load, distinct from a failed preview's own message.
     status_cell = render("govuk_publishing_components/components/tag", text: preview.status)
-    if preview.running? && preview.status_message.present?
+    if preview.status_message.present?
       status_cell += tag.p(preview.status_message, class: "govuk-body-s govuk-!-margin-bottom-0 govuk-!-margin-top-1")
     end
 

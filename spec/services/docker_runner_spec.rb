@@ -183,6 +183,27 @@ RSpec.describe DockerRunner do
     end
   end
 
+  describe "#run_setup_task!" do
+    it "runs a one-off, auto-removed container running the given rails task" do
+      allow(Open3).to receive(:capture3).and_return(["", "", success])
+
+      runner.run_setup_task!("taxonomy:populate_end_to_end_test_data", extra_env: { "DATABASE_URL" => "postgresql://db/app_preview" })
+
+      expect(Open3).to have_received(:capture3) do |*args|
+        expect(args[0..2]).to eq(["docker", "run", "--rm"])
+        expect(args[3..4]).to eq(["--network", "govuk-preview-app_default"])
+        expect(args.last(3)).to eq([runner.image_tag, "bin/rails", "taxonomy:populate_end_to_end_test_data"])
+      end
+    end
+
+    it "raises DockerError when the task fails" do
+      failure = instance_double(Process::Status, success?: false)
+      allow(Open3).to receive(:capture3).and_return(["", "boom", failure])
+
+      expect { runner.run_setup_task!("taxonomy:populate_end_to_end_test_data") }.to raise_error(described_class::DockerError, /boom/)
+    end
+  end
+
   describe "#stop!" do
     it "stops and removes the container if it exists and is running" do
       allow(Open3).to receive(:capture3)

@@ -23,6 +23,7 @@ RSpec.describe GovukApps do
       expect(definition.env).to eq("PLEK_SERVICE_CONTENT_STORE_URI" => "https://www.gov.uk/api")
       expect(definition.dependencies).to eq([])
       expect(definition.database).to be_nil
+      expect(definition.setup_tasks).to eq([])
     end
 
     it "parses a declared database" do
@@ -36,6 +37,12 @@ RSpec.describe GovukApps do
 
       expect(definition.dependencies).to eq(%w[publishing-api])
       expect(definition.database).to have_attributes(adapter: "mysql2", image: "mysql:8")
+    end
+
+    it "parses declared setup_tasks" do
+      definition = described_class.find("whitehall")
+
+      expect(definition.setup_tasks).to eq(%w[taxonomy:populate_end_to_end_test_data taxonomy:rebuild_cache])
     end
 
     it "returns nil for an unknown app" do

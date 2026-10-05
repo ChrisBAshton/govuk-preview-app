@@ -11,7 +11,7 @@ RSpec.describe PreviewBuilder do
 
   def stub_docker(preview, start_result: "container-123")
     docker = instance_double(
-      DockerRunner, build!: nil, start!: start_result, migrate!: nil, seed!: nil,
+      DockerRunner, build!: nil, start!: start_result, migrate!: nil, seed!: nil, run_setup_task!: nil,
                     container_name: "govuk-preview-app-#{preview.slug}"
     )
     allow(DockerRunner).to receive(:new).with(preview).and_return(docker)
@@ -86,7 +86,7 @@ RSpec.describe PreviewBuilder do
         expect(preview.reload.status).to eq("running")
       end
 
-      it "marks the preview running with a warning message when seeding fails, rather than failed" do
+      it "marks the preview failed when seeding fails" do
         preview = create(:preview, app_name: "publishing-api", branch: "my-branch")
         stub_checkout(preview)
         docker = stub_docker(preview)
@@ -97,8 +97,8 @@ RSpec.describe PreviewBuilder do
 
         described_class.new(preview).build!
 
-        expect(docker).to have_received(:start!)
-        expect(preview.reload).to have_attributes(status: "running", status_message: "Seed data failed: boom")
+        expect(docker).not_to have_received(:start!)
+        expect(preview.reload).to have_attributes(status: "failed", status_message: "boom")
       end
     end
 
@@ -111,7 +111,7 @@ RSpec.describe PreviewBuilder do
         allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
 
         docker = instance_double(
-          DockerRunner, build!: nil, start!: "container-123", migrate!: nil, seed!: nil,
+          DockerRunner, build!: nil, start!: "container-123", migrate!: nil, seed!: nil, run_setup_task!: nil,
                         container_name: "govuk-preview-app-#{preview.slug}"
         )
         allow(DockerRunner).to receive(:new) do |p|
@@ -119,7 +119,7 @@ RSpec.describe PreviewBuilder do
             docker
           else
             instance_double(
-              DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, seed!: nil,
+              DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, seed!: nil, run_setup_task!: nil,
                             container_name: "govuk-preview-app-#{p.slug}"
             )
           end
@@ -145,11 +145,11 @@ RSpec.describe PreviewBuilder do
         allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
 
         parent_docker = instance_double(
-          DockerRunner, build!: nil, start!: "parent-container", migrate!: nil, seed!: nil,
+          DockerRunner, build!: nil, start!: "parent-container", migrate!: nil, seed!: nil, run_setup_task!: nil,
                         container_name: "parent-container-name"
         )
         dependent_docker = instance_double(
-          DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, seed!: nil,
+          DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, seed!: nil, run_setup_task!: nil,
                         container_name: "dep-container-name"
         )
         allow(DockerRunner).to receive(:new) { |p| p.parent_id.nil? ? parent_docker : dependent_docker }
@@ -171,6 +171,69 @@ RSpec.describe PreviewBuilder do
         expect(preview.status).to eq("failed")
         expect(preview.status_message).to include("dependency publishing-api failed to start")
         expect(preview.status_message).not_to eq(dependent.status_message)
+      end
+    end
+
+    context "with an app that has setup_tasks (whitehall)" do
+      it "runs each configured task, in order, after seeding" do
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        allow(ConfigOverrides).to receive(:new).and_return(instance_double(ConfigOverrides, write!: nil))
+        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001)
+        allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "mysql2://db/app_preview"))
+        allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
+
+        docker = instance_double(
+          DockerRunner, build!: nil, start!: "container-123", migrate!: nil, seed!: nil, run_setup_task!: nil,
+                        container_name: "govuk-preview-app-whitehall-my-branch"
+        )
+        allow(DockerRunner).to receive(:new) do |p|
+          if p.app_name == "whitehall"
+            docker
+          else
+            instance_double(
+              DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, seed!: nil, run_setup_task!: nil,
+                            container_name: "govuk-preview-app-#{p.slug}"
+            )
+          end
+        end
+
+        described_class.new(preview).build!
+
+        expect(docker).to have_received(:run_setup_task!).with("taxonomy:populate_end_to_end_test_data", extra_env: anything).ordered
+        expect(docker).to have_received(:run_setup_task!).with("taxonomy:rebuild_cache", extra_env: anything).ordered
+        expect(preview.reload.status).to eq("running")
+      end
+
+      it "marks the preview failed when a setup task fails, without running later tasks" do
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        allow(ConfigOverrides).to receive(:new).and_return(instance_double(ConfigOverrides, write!: nil))
+        allow(PortAllocator).to receive(:allocate).and_return(20_000, 20_001)
+        allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, start!: "mysql2://db/app_preview"))
+        allow(Checkout).to receive(:new).and_return(instance_double(Checkout, checkout!: checkout_path))
+
+        docker = instance_double(
+          DockerRunner, build!: nil, start!: "container-123", migrate!: nil, seed!: nil,
+                        container_name: "govuk-preview-app-whitehall-my-branch"
+        )
+        allow(docker).to receive(:run_setup_task!)
+          .with("taxonomy:populate_end_to_end_test_data", extra_env: anything)
+          .and_raise(DockerRunner::DockerError, "base_path did not conform to standard")
+        allow(DockerRunner).to receive(:new) do |p|
+          if p.app_name == "whitehall"
+            docker
+          else
+            instance_double(
+              DockerRunner, build!: nil, start!: "dep-container", migrate!: nil, seed!: nil, run_setup_task!: nil,
+                            container_name: "govuk-preview-app-#{p.slug}"
+            )
+          end
+        end
+
+        described_class.new(preview).build!
+
+        expect(docker).not_to have_received(:run_setup_task!).with("taxonomy:rebuild_cache", extra_env: anything)
+        expect(docker).not_to have_received(:start!)
+        expect(preview.reload).to have_attributes(status: "failed", status_message: "base_path did not conform to standard")
       end
     end
   end

@@ -16,6 +16,13 @@
 # `database` declares the database container this app needs (one per
 # preview, not shared). Omit entirely for apps with no database (e.g.
 # frontend).
+#
+# `setup_tasks` names `bin/rails` tasks to run, in order, as one-off
+# containers after the database is seeded and before the app starts - e.g.
+# Whitehall needs a basic taxonomy in Publishing API before a document can
+# be tagged to a topic, the same way govuk-docker's own Makefile sets this
+# up (see projects/whitehall/Makefile). Not fatal if a task fails (see
+# PreviewBuilder) - same reasoning as db:seed.
 frontend:
   repo_url: https://github.com/alphagov/frontend.git
   port_env_var: PORT
@@ -43,6 +50,9 @@ whitehall:
     image: mysql:8
   dependencies:
     - publishing-api
+  setup_tasks:
+    - taxonomy:populate_end_to_end_test_data
+    - taxonomy:rebuild_cache
   env:
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
     # Not a real secret - Whitehall's own boot aborts without one at all
