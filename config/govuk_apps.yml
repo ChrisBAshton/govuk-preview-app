@@ -40,6 +40,14 @@
 # Preview#generate_public_hostname. Only for read-only, non-state-mutating
 # APIs. Has no effect on a preview with no parent (a standalone top-level
 # preview already gets a perfectly good, readable hostname from its slug).
+#
+# `env_aliases` re-exposes one of this app's own *inherited* dependency
+# addresses under a different env var key, for its own container only (not
+# propagated to siblings/the parent) - see PreviewBuilder#build!. Needed
+# when an app's own code always reads a fixed env var name regardless of
+# which physical instance it's actually talking to - e.g. draft-frontend is
+# the exact same codebase as frontend, which only ever reads
+# PLEK_SERVICE_CONTENT_STORE_URI (never PLEK_SERVICE_DRAFT_CONTENT_STORE_URI).
 frontend:
   repo_url: https://github.com/alphagov/frontend.git
   port_env_var: PORT
@@ -47,7 +55,28 @@ frontend:
   env:
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
 
+draft-frontend:
+  repo_url: https://github.com/alphagov/frontend.git
+  port_env_var: PORT
+  publicly_readable: true
+  env_aliases:
+    PLEK_SERVICE_CONTENT_STORE_URI: PLEK_SERVICE_DRAFT_CONTENT_STORE_URI
+  env:
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+    # Purely cosmetic - frontend's own draft_helper.rb/layouts_helper.rb use
+    # this solely to show a "draft" watermark banner; no effect on content
+    # lookup (see env_aliases above for how that's actually wired).
+    PLEK_HOSTNAME_PREFIX: "draft-"
+
 content-store:
+  repo_url: https://github.com/alphagov/content-store.git
+  port_env_var: PORT
+  database:
+    adapter: postgresql
+    image: postgres:17
+  publicly_readable: true
+
+draft-content-store:
   repo_url: https://github.com/alphagov/content-store.git
   port_env_var: PORT
   database:
@@ -63,6 +92,7 @@ publishing-api:
     image: postgres:17
   dependencies:
     - content-store
+    - draft-content-store
   worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
   env:
     # The queue publisher broadcasts over RabbitMQ to third-party downstream
@@ -80,6 +110,7 @@ whitehall:
   dependencies:
     - publishing-api
     - frontend
+    - draft-frontend
   setup_tasks:
     - taxonomy:populate_end_to_end_test_data
     - taxonomy:rebuild_cache

@@ -33,7 +33,23 @@ class PreviewBuilder
 
     app = GovukApps.find(preview.app_name)
     dependency_env = inherited_env.merge(build_dependencies!(app, inherited_env))
-    extra_env = dependency_env
+
+    # Lets an app read one of its own inherited dependencies' resolved
+    # addresses under a *different* env var name, for its own container
+    # only - e.g. draft-frontend is the exact same codebase as frontend,
+    # which only ever reads PLEK_SERVICE_CONTENT_STORE_URI (never
+    # PLEK_SERVICE_DRAFT_CONTENT_STORE_URI) - see config/govuk_apps.yml.
+    # Applied on top of dependency_env (not the other way round): by the
+    # time a later sibling like draft-frontend is built, dependency_env
+    # already holds the *live* PLEK_SERVICE_CONTENT_STORE_URI (inherited
+    # from publishing-api's own content-store dependency), so the alias
+    # must win here or draft-frontend would silently render the live site.
+    # dependency_env itself - returned below for propagation to further
+    # siblings/the parent - is deliberately left unaliased.
+    aliased_env = app.env_aliases.filter_map { |to_key, from_key|
+      [to_key, dependency_env[from_key]] if dependency_env.key?(from_key)
+    }.to_h
+    extra_env = dependency_env.merge(aliased_env)
 
     checkout = Checkout.new(preview)
     docker = DockerRunner.new(preview)
@@ -86,7 +102,15 @@ private
       end
 
       dep_container_name = DockerRunner.new(dependent).container_name
-      env["PLEK_SERVICE_#{dep_name.upcase.tr('-', '_')}_URI"] = "http://#{dep_container_name}:#{dependent.port}"
+      plek_key = dep_name.upcase.tr("-", "_")
+      env["PLEK_SERVICE_#{plek_key}_URI"] = "http://#{dep_container_name}:#{dependent.port}"
+      # The internal URI above is only ever reachable by sibling containers
+      # over Docker's embedded DNS - fine for server-to-server use (e.g.
+      # Frontend's own Content Store lookups), but useless for a link
+      # meant to be clicked in a browser (e.g. Whitehall's "Preview on
+      # website"). A publicly_readable dependency also gets its real,
+      # browser-reachable URL exposed this way.
+      env["PLEK_SERVICE_#{plek_key}_PUBLIC_URL"] = dependent.url if dependent.publicly_readable?
       env.merge!(resolved_env)
     end
   end

@@ -14,7 +14,7 @@ module GovukApps
   Database = Struct.new(:adapter, :image, keyword_init: true)
   Definition = Struct.new(
     :name, :repo_url, :port_env_var, :env, :dependencies, :database, :setup_tasks,
-    :worker_command, :publicly_readable, keyword_init: true
+    :worker_command, :publicly_readable, :env_aliases, keyword_init: true
   )
 
   def self.all
@@ -40,6 +40,7 @@ module GovukApps
         setup_tasks: attrs.fetch("setup_tasks", []),
         worker_command: attrs["worker_command"],
         publicly_readable: attrs.fetch("publicly_readable", false),
+        env_aliases: attrs.fetch("env_aliases", {}),
       )
     end
   end
