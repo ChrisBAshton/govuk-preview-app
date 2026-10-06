@@ -42,7 +42,29 @@ RSpec.describe "Previews" do
       expect(response.body).to include("Internal dependency")
     end
 
-    it "nests each dependent directly beneath the app it belongs to, however deep the chain" do
+    it "lists the most recently visited previews first, with never-visited ones last, newest first" do
+      never_older = create(:preview, app_name: "frontend", branch: "never-older", created_at: 2.days.ago)
+      never_newer = create(:preview, app_name: "frontend", branch: "never-newer", created_at: 1.day.ago)
+      visited_long_ago = create(:preview, app_name: "frontend", branch: "visited-long-ago", last_accessed_at: 3.hours.ago)
+      visited_recently = create(:preview, app_name: "frontend", branch: "visited-recently", last_accessed_at: 5.minutes.ago)
+
+      get previews_path
+
+      branches = Capybara::Node::Simple.new(response.body).all("table tbody tr").map { |row| row.all("td")[1].text }
+      expect(branches).to eq([visited_recently, visited_long_ago, never_newer, never_older].map(&:branch))
+    end
+
+    it "shows when each preview was created, and when its stack was last visited" do
+      create(:preview, app_name: "frontend", branch: "visited", created_at: 2.hours.ago, last_accessed_at: 5.minutes.ago)
+      create(:preview, app_name: "frontend", branch: "unvisited")
+
+      get previews_path
+
+      cells = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, row.all("td")[4..5].map(&:text)] }
+      expect(cells).to eq("visited" => ["about 2 hours ago", "5 minutes ago"], "unvisited" => ["less than a minute ago", "Never"])
+    end
+
+    it "lists every dependency beneath the app its stack belongs to, however deep the chain" do
       # Created first, so it's the *older* top-level preview - the
       # controller orders top-level previews newest-first, so this must
       # still end up listed after the whole whitehall chain below.
@@ -70,6 +92,15 @@ RSpec.describe "Previews" do
 
       expect(response).to have_http_status(:ok)
     end
+
+    it "only mentions local images when they're enabled" do
+      get new_preview_path
+      expect(response.body).not_to include("bin/preview-build")
+
+      enable_local_images
+      get new_preview_path
+      expect(response.body).to include("bin/preview-build")
+    end
   end
 
   describe "POST /previews" do
@@ -88,6 +119,44 @@ RSpec.describe "Previews" do
       }.not_to change(Preview, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
+    end
+  end
+
+  describe "POST /previews/:id/sleep, /wake and /retry" do
+    it "queues putting a running preview to sleep" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+
+      expect { post sleep_preview_path(preview) }.to change(PreviewsSleepJob.jobs, :size).by(1)
+      expect(response).to redirect_to(previews_path)
+    end
+
+    it "queues waking a sleeping preview" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :sleeping)
+
+      expect { post wake_preview_path(preview) }.to change(PreviewsWakeJob.jobs, :size).by(1)
+      expect(preview.reload.status).to eq("waking")
+    end
+
+    it "retries a failed preview's build from where it stopped" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :failed, status_message: "boom")
+
+      expect { post retry_preview_path(preview) }.to change(PreviewsCreateJob.jobs, :size).by(1)
+      expect(preview.reload).to have_attributes(status: "queued", status_message: nil)
+    end
+
+    it "offers only the buttons that apply to each preview" do
+      create(:preview, app_name: "frontend", branch: "running-one", status: :running)
+      create(:preview, app_name: "frontend", branch: "sleeping-one", status: :sleeping)
+      create(:preview, app_name: "frontend", branch: "failed-one", status: :failed)
+
+      get previews_path
+
+      rows = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, row.all("button").map(&:text)] }
+      expect(rows).to eq(
+        "running-one" => %w[Sleep Delete],
+        "sleeping-one" => %w[Wake Delete],
+        "failed-one" => %w[Retry Delete],
+      )
     end
   end
 

@@ -115,4 +115,12 @@ RSpec.describe GovukApps do
       expect(described_class.trusted_repo_url?("not a url")).to be(false)
     end
   end
+
+  describe ".dependency_tree" do
+    it "lists every transitive dependency, in build order" do
+      expect(described_class.dependency_tree("whitehall")).to eq(
+        %w[publishing-api content-store draft-content-store frontend draft-frontend],
+      )
+    end
+  end
 end

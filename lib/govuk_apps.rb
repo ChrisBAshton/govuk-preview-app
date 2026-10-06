@@ -50,6 +50,14 @@ module GovukApps
     all.find { |app| app.name == name }
   end
 
+  # Every app a preview of `name` starts a dependency preview of, at any
+  # depth, in build order - e.g. whitehall -> publishing-api,
+  # content-store, draft-content-store, frontend, draft-frontend. Used to
+  # work out how much room a whole preview stack needs (PreviewCapacity).
+  def self.dependency_tree(name)
+    find(name)&.dependencies.to_a.flat_map { |dep| [dep, *dependency_tree(dep)] }
+  end
+
   # Parses with URI rather than a string prefix/regex match, so a URL
   # designed to *look* right to a naive check (userinfo tricks like
   # "https://github.com@evil.com/...", lookalike hosts like

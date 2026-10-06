@@ -8,7 +8,17 @@ RSpec.describe KubernetesRunner do
 
   let(:applied) { {} }
 
-  before { allow(runner).to receive(:pause) }
+  before do
+    allow(runner).to receive(:pause)
+    # No pods stuck on an unusable image, unless a test says otherwise.
+    stub_request(:get, k8s_url(api.path("v1", "pods"))).with(query: hash_including({})).to_return(json_response({ items: [] }))
+  end
+
+  def stub_pod_waiting(reason)
+    stub_request(:get, k8s_url(api.path("v1", "pods")))
+      .with(query: hash_including("labelSelector" => "app.kubernetes.io/instance=#{runner.container_name}"))
+      .to_return(json_response({ items: [{ status: { containerStatuses: [{ image: image, state: { waiting: { reason: reason } } }] } }] }))
+  end
 
   def apply_stub(api_version, resource, name, response = {})
     path = api.path(api_version, resource, name)
@@ -93,6 +103,44 @@ RSpec.describe KubernetesRunner do
       expect { runner.start! }.to raise_error(described_class::KubernetesError, /did not become ready/)
     end
 
+    it "pulls a registry image only if it isn't already on the node" do
+      stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name))).to_return(json_response({ status: { availableReplicas: 1 } }))
+
+      runner.start!
+
+      expect(applied_body("apps/v1", "deployments", name).dig("spec", "template", "spec", "containers", 0, "imagePullPolicy")).to eq("IfNotPresent")
+    end
+
+    context "with a locally-built image" do
+      let(:image) { "govuk-preview-local/publishing-api:my-branch-abc1234" }
+
+      it "never tries to pull it" do
+        stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name))).to_return(json_response({ status: { availableReplicas: 1 } }))
+
+        runner.start!
+
+        expect(applied_body("apps/v1", "deployments", name).dig("spec", "template", "spec", "containers", 0, "imagePullPolicy")).to eq("Never")
+      end
+
+      it "fails straight away, with a hint, when the image hasn't been loaded into the cluster" do
+        stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name))).to_return(json_response({ status: {} }))
+        stub_pod_waiting("ErrImageNeverPull")
+
+        expect { runner.start! }.to raise_error(
+          described_class::KubernetesError,
+          "Can't use image #{image} (ErrImageNeverPull) - has it been built and loaded with bin/preview-build?",
+        )
+      end
+    end
+
+    it "keeps waiting through a registry pull that may yet succeed" do
+      stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name)))
+        .to_return(json_response({ status: {} }), json_response({ status: { availableReplicas: 1 } }))
+      stub_pod_waiting("ImagePullBackOff")
+
+      expect(runner.start!).to eq("deploy-uid")
+    end
+
     it "refuses to start without a resolved image" do
       runner = described_class.new(preview, api: api)
 
@@ -146,6 +194,52 @@ RSpec.describe KubernetesRunner do
 
       expect { runner.migrate! }
         .to raise_error(described_class::KubernetesError, /\Abin\/rails db:create db:schema:load failed: bin\/rails aborted!/)
+    end
+  end
+
+  describe "#scale!" do
+    it "scales the app's Deployment and its worker's" do
+      stub = stub_request(:patch, %r{/deployments/}).to_return(json_response({}))
+
+      runner.scale!(0)
+
+      expect(stub).to have_been_requested.twice
+      expect(a_request(:patch, k8s_url(api.path("apps/v1", "deployments", runner.worker_container_name)))
+        .with(body: { spec: { replicas: 0 } }.to_json, headers: { "Content-Type" => "application/merge-patch+json" })).to have_been_made
+    end
+  end
+
+  describe ".report_scheduling" do
+    let(:unschedulable_pod) do
+      { status: { conditions: [{ type: "PodScheduled", status: "False", reason: "Unschedulable", message: "0/1 nodes are available: 1 Insufficient memory." }] } }.deep_stringify_keys
+    end
+
+    it "says on the preview when a pod is waiting for room in the cluster, and clears it once it isn't" do
+      described_class.report_scheduling(preview, [unschedulable_pod])
+      expect(preview.reload.status_message).to eq("Waiting for cluster capacity: 0/1 nodes are available: 1 Insufficient memory.")
+
+      described_class.report_scheduling(preview, [])
+      expect(preview.reload.status_message).to be_nil
+    end
+
+    it "leaves any other status message alone" do
+      preview.update!(status_message: "something else")
+
+      described_class.report_scheduling(preview, [])
+
+      expect(preview.reload.status_message).to eq("something else")
+    end
+  end
+
+  describe "a Job that never ran" do
+    it "fails with Kubernetes' own reason instead of missing logs" do
+      jobs_path = api.path("batch/v1", "jobs")
+      stub_request(:post, k8s_url(jobs_path)).to_return(json_response({}))
+      stub_request(:get, %r{\A#{Regexp.escape(k8s_url(jobs_path))}/}).to_return(json_response({
+        status: { conditions: [{ type: "Failed", status: "True", reason: "DeadlineExceeded", message: "Job was active longer than specified deadline" }] },
+      }))
+
+      expect { runner.migrate! }.to raise_error(described_class::KubernetesError, /failed: Job was active longer than specified deadline/)
     end
   end
 

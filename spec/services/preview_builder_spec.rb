@@ -19,6 +19,7 @@ RSpec.describe PreviewBuilder do
       instance_double(ImageResolver, resolve!: "ghcr.io/alphagov/govuk/#{app.name}:#{branch}")
     end
     allow(KubernetesRunner).to receive(:new) { |preview, **| runners[preview] }
+    allow(PreviewCapacity).to receive(:make_room_for!)
   end
 
   def stub_databases(url = "db-url")
@@ -35,6 +36,25 @@ RSpec.describe PreviewBuilder do
 
       described_class.new(preview).build!
 
+      expect(ImageResolver).not_to have_received(:new)
+    end
+
+    it "makes room for the whole stack once, up front, from the top-level preview only" do
+      preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+      stub_databases
+
+      described_class.new(preview).build!
+
+      expect(PreviewCapacity).to have_received(:make_room_for!).once.with(preview, building: true)
+    end
+
+    it "marks the preview failed, saying why, when there's no room for it" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch")
+      allow(PreviewCapacity).to receive(:make_room_for!).and_raise(PreviewCapacity::AtCapacityError, "At capacity: blah")
+
+      described_class.new(preview).build!
+
+      expect(preview.reload).to have_attributes(status: "failed", status_message: "At capacity: blah")
       expect(ImageResolver).not_to have_received(:new)
     end
 
@@ -213,6 +233,41 @@ RSpec.describe PreviewBuilder do
         # publishing-api, whitehall's first declared dependency, fails before
         # frontend (declared after it) is ever attempted.
         expect(preview.reload.dependents.pluck(:app_name)).to eq(%w[publishing-api])
+      end
+    end
+
+    context "when resuming a build that was interrupted part-way (e.g. by a worker restart)" do
+      before { stub_databases }
+
+      it "reuses the dependency previews that already exist, rebuilding only those that hadn't finished" do
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        publishing_api = create(:preview, app_name: "publishing-api", branch: "main", parent: preview, status: :running)
+        create(:preview, app_name: "content-store", branch: "main", parent: publishing_api, status: :running)
+        create(:preview, app_name: "draft-content-store", branch: "main", parent: publishing_api, status: :running)
+        frontend = create(:preview, app_name: "frontend", branch: "main", parent: preview, status: :starting)
+
+        expect { described_class.new(preview).build! }.to change(Preview, :count).by(1) # just draft-frontend
+
+        expect(runners[publishing_api]).not_to have_received(:start!)
+        expect(runners[frontend]).to have_received(:start!)
+        expect(preview.reload.status).to eq("running")
+      end
+
+      it "still passes on the addresses resolved by dependencies that were already running" do
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        publishing_api = create(:preview, app_name: "publishing-api", branch: "main", parent: preview, status: :running)
+        content_store = create(:preview, app_name: "content-store", branch: "main", parent: publishing_api, status: :running)
+        create(:preview, app_name: "draft-content-store", branch: "main", parent: publishing_api, status: :running)
+
+        described_class.new(preview).build!
+
+        frontend = preview.reload.dependents.find_by!(app_name: "frontend")
+        expect(runners[frontend]).to have_received(:start!).with(
+          extra_env: hash_including("PLEK_SERVICE_CONTENT_STORE_URI" => internal_uri(content_store)),
+        )
+        expect(runners[preview]).to have_received(:start!).with(
+          extra_env: hash_including("PLEK_SERVICE_PUBLISHING_API_URI" => internal_uri(publishing_api)),
+        )
       end
     end
 

@@ -14,6 +14,7 @@ Nothing is built in the cluster. `ImageResolver` finds the image GOV.UK's own Gi
 
 - **`main`** - the app's latest release, tagged e.g. `v1234` by its own deploy workflow. Every dependency preview runs `main`, so these work out of the box.
 - **any other branch** - the image tagged with the branch's head commit SHA, pushed by the app's "Build image from PR" workflow (with pushing enabled). A preview waits (`waiting_for_image`) until it appears, so you can create one straight after pushing.
+- **`local:<tag>`** - local development only: an image built from your own checkout by `bin/preview-build` and loaded straight into the kind cluster. See [Previewing local code](#previewing-local-code).
 
 On integration, images are pulled through GOV.UK's ECR pull-through cache in front of GHCR (`PREVIEW_APP_IMAGE_REGISTRY`).
 
@@ -50,13 +51,23 @@ The `previews` namespace is a security boundary, not just tidiness:
 - Network policies (`kubernetes/previews/network-policies.yaml`) let previews talk to each other, DNS and the public internet, and let Preview App's web pod in - nothing else. Previews can't reach other namespaces, private address ranges or the cloud metadata service.
 - A `ResourceQuota` caps what previews can use between them.
 
+### Sleeping and waking
+
+Every preview stack has to fit in the `previews` namespace's `ResourceQuota` - on integration that's the cost cap (the cluster autoscaler adds nodes for anything within it), and locally it's set to what the single kind node can hold. Before a stack is built or woken, `PreviewCapacity` works out how much memory it needs (from what each of its pods requests) and, if there isn't room, puts the least recently used other stacks to sleep until there is. A stack used in the last 15 minutes is never put to sleep; if that leaves no room, the preview says it's at capacity rather than waiting indefinitely.
+
+Sleeping (`PreviewSleeper`) scales every Deployment and database in a stack to zero, keeping everything else - Services, config, images, and database volumes - so waking it is just scaling back up: no image pulls, migrations or seeds, and everything that had been published into it is still there. Visiting a sleeping preview (or one of its dependencies' public hostnames) shows a self-refreshing "Waking up" page and wakes the whole stack; previews can also be put to sleep or woken from the previews page. `HostRouter` records when each stack was last visited.
+
+A preview waiting for room in the cluster says so in its status, and a failed preview can be retried - its build carries on from where it stopped, reusing whatever had already started.
+
 ### Tearing down
 
 Deleting a preview enqueues `PreviewsDestroyJob`, which delegates to `PreviewDestroyer#destroy!` - recursively deleting every dependent preview's Kubernetes objects (and database volume) first, then the preview's own.
 
 ### Staying honest about what's actually running
 
-`PreviewReconciler` runs at boot and marks any `running` preview `failed` if its Deployment or database no longer exists - e.g. after the local kind cluster was recreated. A pod that merely crashed or was rescheduled doesn't count: Kubernetes recreates it by itself.
+`PreviewReconciler` runs at boot and marks any `running` or `sleeping` preview `failed` if its Deployment or database no longer exists - e.g. after the local kind cluster was recreated. A pod that merely crashed or was rescheduled doesn't count: Kubernetes recreates it by itself.
+
+`InterruptedJobResumer` also runs at boot, in the worker only, and re-queues the build, wake or teardown of any preview whose Sidekiq job was lost part-way - e.g. because Docker Desktop was quit mid-build. Every one of those jobs is safe to re-run from any point.
 
 ## Local development
 
@@ -82,6 +93,8 @@ Visit <http://govuk-preview-app.dev.gov.uk:8080/previews>. Once a preview reache
 
 Preview App listens on `127.0.0.1:8080` rather than port 80 because govuk-docker's own nginx-proxy already holds port 80 on most GOV.UK dev machines, and only one process can bind a given host port - this way both run side by side. On integration there's no port in any URL.
 
+The local quota (`kubernetes/local/kustomization.yaml`) holds one full Whitehall stack, plus a build and other small previews, at a time - anything else is put to sleep to make room, as on integration. Giving Docker Desktop more memory and raising that quota to match lets more stay awake.
+
 After changing Preview App's own code, run `bin/kind-deploy` to rebuild and redeploy it (existing previews keep running). `bin/kind-down` deletes the cluster, every preview and Preview App's database.
 
 Every `kubectl` command in these scripts passes `--context kind-govuk-preview-app`, so they can never touch any other cluster. To look around yourself:
@@ -93,6 +106,20 @@ kubectl --context kind-govuk-preview-app -n previews get pods
 ### Previewing a branch
 
 Any branch whose image has been pushed to GHCR can be previewed locally, exactly as on integration - Preview App never needs the code itself. `main` (and so every dependency) works straight away; other branches need the app's "Build image from PR" workflow to have pushed their image.
+
+### Previewing local code
+
+Code that's never been pushed - including uncommitted changes - can be previewed too:
+
+```
+bin/preview-build frontend            # builds ~/govuk/frontend; or pass a path
+```
+
+This builds your checkout's own Dockerfile with your local Docker, loads the image straight into the kind cluster (no registry involved), and prints a branch value like `local:my-branch-ab12cd3` (with `-dirty-<timestamp>` if there were uncommitted changes, so each state of your checkout gets its own image). Use that value as the branch when creating a preview of that app. Its dependencies still run `main`, as for any other preview.
+
+`bin/preview-build` takes any app in `config/govuk_apps.yml`; apps sharing a repo share an image, so one Frontend build can be previewed as either `frontend` or `draft-frontend`. Re-run it after further changes, and create a new preview with the new value - an existing preview never changes underneath you.
+
+`local:` images only exist in local development (`PREVIEW_APP_LOCAL_IMAGES`); integration rejects them. Only the tag is ever user-supplied - the image is always `govuk-preview-local/<repo>` - so a `local:` value can't point at an arbitrary image. If a preview names a tag that hasn't been loaded, it fails straight away saying so.
 
 ### Running the tests
 

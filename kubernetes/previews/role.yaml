@@ -16,9 +16,10 @@ rules:
   - apiGroups: [""]
     resources: ["services", "configmaps", "persistentvolumeclaims"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
-  # Read-only: to find a failed Job's pod and read its logs.
+  # Read-only: to find a failed Job's pod and read its logs, and to see
+  # how much room is left for previews (see PreviewCapacity).
   - apiGroups: [""]
-    resources: ["pods", "pods/log"]
+    resources: ["pods", "pods/log", "resourcequotas"]
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

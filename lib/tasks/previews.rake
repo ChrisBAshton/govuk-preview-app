@@ -3,4 +3,9 @@ namespace :previews do
   task reconcile: :environment do
     PreviewReconciler.run!
   end
+
+  desc "Re-queue the build/teardown of any preview whose job was lost part-way"
+  task resume: :environment do
+    InterruptedJobResumer.run!
+  end
 end

@@ -161,4 +161,27 @@ RSpec.describe Preview do
       expect(described_class.new.status).to eq("queued")
     end
   end
+
+  describe "local image branches" do
+    it "rejects a local: branch unless local images are enabled" do
+      preview = build(:preview, app_name: "frontend", branch: "local:my-branch-abc1234")
+
+      expect(preview).not_to be_valid
+      expect(preview.errors[:branch]).to include("can only use a local image in local development")
+    end
+
+    it "accepts a local: branch when local images are enabled" do
+      enable_local_images
+
+      expect(build(:preview, app_name: "frontend", branch: "local:my-branch-abc1234")).to be_valid
+    end
+
+    it "rejects a local: tag that isn't a plain Docker tag" do
+      enable_local_images
+      preview = build(:preview, app_name: "frontend", branch: "local:evil.example/image:latest")
+
+      expect(preview).not_to be_valid
+      expect(preview.errors[:branch]).to include("has an invalid local image tag")
+    end
+  end
 end

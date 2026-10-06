@@ -79,4 +79,44 @@ RSpec.describe HostRouter do
 
     expect(status).to eq(200)
   end
+
+  describe "sleeping previews" do
+    it "serves a self-refreshing waking-up page and queues exactly one wake, however many requests arrive" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :sleeping)
+
+      responses = 3.times.map { router.call(env_for(preview.hostname)) }
+
+      expect(responses.map(&:first)).to eq([503, 503, 503])
+      expect(responses.first.last.join).to include("Waking up this preview", 'http-equiv="refresh"')
+      expect(PreviewsWakeJob.jobs.map { |job| job["args"].first }).to eq([preview.id])
+      expect(preview.reload.status).to eq("waking")
+    end
+
+    it "wakes the whole stack when a sleeping dependency's public hostname is visited" do
+      parent = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :sleeping)
+      dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent, status: :sleeping)
+
+      status, = router.call(env_for(dependent.hostname))
+
+      expect(status).to eq(503)
+      expect(PreviewsWakeJob.jobs.map { |job| job["args"].first }).to eq([parent.id])
+    end
+
+    it "shows why a preview couldn't be woken" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :waking, status_message: "Couldn't wake up: At capacity")
+
+      _, _, body = router.call(env_for(preview.hostname))
+
+      expect(body.join).to include("Couldn&#39;t wake up: At capacity")
+    end
+  end
+
+  it "records when a running preview's stack was last used" do
+    preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+    allow(Rack::Proxy).to receive(:new).and_return(instance_double(Rack::Proxy, call: [200, {}, []]))
+
+    described_class.new(app).call(env_for(preview.hostname))
+
+    expect(preview.reload.last_accessed_at).to be_within(1.minute).of(Time.current)
+  end
 end

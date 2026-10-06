@@ -26,6 +26,9 @@ data:
   # Matches kind-config.yaml's host port, so rendered preview links work.
   PREVIEW_APP_EXTERNAL_PORT: "8080"
   PREVIEW_APP_KUBERNETES_NAMESPACE: previews
+  # Allows `local:<tag>` sources - images built from your own checkouts by
+  # bin/preview-build. Never set on integration.
+  PREVIEW_APP_LOCAL_IMAGES: "true"
 ---
 # A NodePort, not an Ingress: Preview App does its own Host-header routing
 # (HostRouter), so there's nothing for an ingress controller to add
@@ -120,7 +123,7 @@ spec:
             - -c
             - >-
               until bin/rails runner 'exit(ActiveRecord::Base.connection.table_exists?(:previews) ? 0 : 1)' 2>/dev/null; do sleep 3; done
-              && bin/rails previews:reconcile
+              && bin/rails previews:reconcile previews:resume
               && exec bundle exec sidekiq -C ./config/sidekiq.yml
           envFrom:
             - configMapRef:

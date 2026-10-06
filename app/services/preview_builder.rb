@@ -9,6 +9,7 @@ class PreviewBuilder
   RESCUED_ERRORS = [
     ImageResolver::ImageError,
     KubernetesApi::Error,
+    PreviewCapacity::AtCapacityError,
     DependencyError,
   ].freeze
 
@@ -26,11 +27,24 @@ class PreviewBuilder
   # Returns the same kind of hash (this preview's own inherited env, plus
   # whatever its own dependencies resolved) so a caller building further
   # siblings afterwards can pass it on in turn.
+  #
+  # Safe to call again on a build that was interrupted part-way (e.g. the
+  # Sidekiq worker restarted mid-build, and Sidekiq retried the job):
+  # existing dependency previews are reused rather than recreated, anything
+  # already running is left alone, and anything that hadn't finished is
+  # built again - server-side apply and Jobs make every step re-runnable.
   def build!(inherited_env: {})
-    return inherited_env if preview.running?
-
     app = GovukApps.find(preview.app_name)
+
+    # Room for the whole stack is made once, up front, by its top-level
+    # preview - putting least recently used previews to sleep if need be.
+    PreviewCapacity.make_room_for!(preview, building: true) if preview.parent_id.nil? && !preview.running?
     dependency_env = inherited_env.merge(build_dependencies!(app, inherited_env))
+
+    # Nothing of its own to start - but a running dependency's own
+    # dependencies' addresses still need passing on to its later siblings
+    # (see above), exactly as when it was first built.
+    return dependency_env if preview.running?
 
     # Lets an app read one of its own inherited dependencies' resolved
     # addresses under a *different* env var name, for its own container
@@ -75,7 +89,7 @@ class PreviewBuilder
     container_id = runner.start!(extra_env: extra_env)
     runner.start_worker!(extra_env: extra_env) if app.worker_command
 
-    preview.update!(status: :running, container_id: container_id)
+    preview.update!(status: :running, container_id: container_id, last_accessed_at: Time.current)
 
     dependency_env
   rescue *RESCUED_ERRORS => e
@@ -87,7 +101,8 @@ private
 
   def build_dependencies!(app, inherited_env)
     app.dependencies.each_with_object({}) do |dep_name, env|
-      dependent = Preview.create!(app_name: dep_name, branch: "main", parent: preview)
+      dependent = preview.dependents.find_by(app_name: dep_name) ||
+        Preview.create!(app_name: dep_name, branch: "main", parent: preview)
       resolved_env = self.class.new(dependent).build!(inherited_env: inherited_env.merge(env))
 
       unless dependent.reload.running?

@@ -20,6 +20,15 @@ class KubernetesDatabaseRunner
 
   attr_reader :preview, :database
 
+  # See KubernetesRunner.memory_request.
+  def self.memory_request
+    ENV.fetch("PREVIEW_APP_DATABASE_MEMORY_REQUEST", "256Mi")
+  end
+
+  def self.memory_limit
+    ENV.fetch("PREVIEW_APP_DATABASE_MEMORY_LIMIT", "1Gi")
+  end
+
   def initialize(preview, database, api: KubernetesApi.new)
     @preview = preview
     @database = database
@@ -41,6 +50,26 @@ class KubernetesDatabaseRunner
     api.delete(api.path("apps/v1", "statefulsets", container_name))
     api.delete(api.path("v1", "services", container_name))
     api.delete(api.path("v1", "persistentvolumeclaims", "data-#{container_name}-0"))
+  end
+
+  # Sleeping (0) and waking (1) - see PreviewSleeper. The volume stays
+  # (persistentVolumeClaimRetentionPolicy whenScaled: Retain), so the
+  # preview wakes up with everything that had been published into it.
+  def scale!(replicas)
+    api.merge_patch(api.path("apps/v1", "statefulsets", container_name), { spec: { replicas: replicas } })
+  end
+
+  def wait_until_ready!
+    deadline = Time.current + timeout
+
+    until ready?
+      raise DatabaseError, "Database did not become ready within #{timeout}s" if Time.current > deadline
+
+      KubernetesRunner.report_scheduling(
+        preview, api.get(api.path("v1", "pods"), labelSelector: "app.kubernetes.io/instance=#{container_name}").fetch("items", [])
+      )
+      pause
+    end
   end
 
   def exists?
@@ -113,8 +142,8 @@ private
       ports: [{ name: "db", containerPort: port }],
       readinessProbe: { exec: { command: ready_command }, periodSeconds: 3 },
       resources: {
-        requests: { cpu: "50m", memory: ENV.fetch("PREVIEW_APP_DATABASE_MEMORY_REQUEST", "256Mi") },
-        limits: { memory: ENV.fetch("PREVIEW_APP_DATABASE_MEMORY_LIMIT", "1Gi") },
+        requests: { cpu: "50m", memory: self.class.memory_request },
+        limits: { memory: self.class.memory_limit },
       },
       securityContext: KubernetesRunner.container_security_context,
       volumeMounts: [{ name: "data", mountPath: VOLUME_MOUNT }],
@@ -161,16 +190,6 @@ private
     case database.adapter
     when "mysql2" then ["mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "--silent"]
     when "postgresql" then ["pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
-    end
-  end
-
-  def wait_until_ready!
-    deadline = Time.current + timeout
-
-    until ready?
-      raise DatabaseError, "Database did not become ready within #{timeout}s" if Time.current > deadline
-
-      pause
     end
   end
 

@@ -1,15 +1,29 @@
-@import "govuk_publishing_components/specific-components";
+// Every component (and the GOV.UK Frontend typography/layout classes they
+// rely on, e.g. govuk-body) rather than a hand-picked subset, so a view
+// can use any of them without also having to remember an import here -
+// as other GOV.UK admin apps, e.g. Short URL Manager, do.
+@import "govuk_publishing_components/all-components";
 
-@import "govuk_publishing_components/components/back-link";
-@import "govuk_publishing_components/components/button";
-@import "govuk_publishing_components/components/error-summary";
-@import "govuk_publishing_components/components/layout-footer";
-@import "govuk_publishing_components/components/layout-for-admin";
-@import "govuk_publishing_components/components/layout-header";
-@import "govuk_publishing_components/components/notice";
-@import "govuk_publishing_components/components/phase-banner";
-@import "govuk_publishing_components/components/service-navigation";
-@import "govuk_publishing_components/components/skip-link";
-@import "govuk_publishing_components/components/success-alert";
-@import "govuk_publishing_components/components/table";
-@import "govuk_publishing_components/components/tag";
+// Wider than GOV.UK's standard 960px page width, so the previews table has
+// room for all its columns - applied to the standard container itself, so
+// the header, navigation, content and footer all line up, with GOV.UK
+// Frontend's own gutters and centring.
+$app-page-width: 1200px;
+
+.govuk-width-container {
+  @include govuk-width-container($app-page-width);
+}
+
+// Shades dependency previews' rows on the previews page, so each top-level
+// preview stands out from the stack nested beneath it. The table component
+// can't put a class on a row itself, so the row is found by the marker on
+// its app name (PreviewsHelper#preview_app_name_cell).
+.govuk-table__row:has(.app-dependency-name) .govuk-table__cell {
+  background-color: govuk-colour("black", $variant: "tint-95");
+}
+
+// App names are hyphenated, and would otherwise wrap at every hyphen in
+// the table's narrow first column.
+.app-dependency-name {
+  white-space: nowrap;
+}

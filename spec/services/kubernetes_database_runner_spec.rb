@@ -4,6 +4,10 @@ RSpec.describe KubernetesDatabaseRunner do
   let(:api) { kubernetes_api }
   let(:applied_stateful_sets) { [] }
 
+  before do
+    stub_request(:get, k8s_url(api.path("v1", "pods"))).with(query: hash_including({})).to_return(json_response({ items: [] }))
+  end
+
   def runner_for(preview)
     database = GovukApps.find(preview.app_name).database
     described_class.new(preview, database, api: api).tap { |runner| allow(runner).to receive(:pause) }
