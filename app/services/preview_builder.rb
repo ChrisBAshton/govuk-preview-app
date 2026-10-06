@@ -1,4 +1,4 @@
-# Drives a Preview through checking_out -> building -> starting -> running,
+# Drives a Preview through waiting_for_image -> starting -> running,
 # including its dependencies (each its own dedicated, never-shared Preview -
 # see Preview#generate_slug) and, if the app needs one, a database. Extracted
 # from PreviewsCreateJob so a dependency can be built by calling this
@@ -7,10 +7,8 @@ class PreviewBuilder
   class DependencyError < StandardError; end
 
   RESCUED_ERRORS = [
-    Checkout::GitError,
-    DockerRunner::DockerError,
-    PortAllocator::NoPortsAvailableError,
-    DatabaseRunner::DatabaseError,
+    ImageResolver::ImageError,
+    KubernetesApi::Error,
     DependencyError,
   ].freeze
 
@@ -51,36 +49,31 @@ class PreviewBuilder
     }.to_h
     extra_env = dependency_env.merge(aliased_env)
 
-    checkout = Checkout.new(preview)
-    docker = DockerRunner.new(preview)
+    # Nothing is built here - see ImageResolver for where images come from.
+    preview.update!(status: :waiting_for_image)
+    runner = KubernetesRunner.new(preview, image: ImageResolver.new(app, preview.branch).resolve!)
 
-    preview.update!(status: :checking_out)
-    checkout_path = checkout.checkout!
-    ConfigOverrides.new(checkout_path).write!
-
-    preview.update!(status: :building)
-    docker.build!(checkout_path)
-
-    preview.update!(status: :starting, port: PortAllocator.allocate)
+    preview.update!(status: :starting)
+    runner.prepare!
 
     if app.database
-      database_url = DatabaseRunner.new(preview, app.database).start!
+      database_url = KubernetesDatabaseRunner.new(preview, app.database).start!
       extra_env = extra_env.merge("DATABASE_URL" => database_url)
-      docker.migrate!(extra_env: extra_env)
-      docker.seed!(extra_env: extra_env)
+      runner.migrate!(extra_env: extra_env)
+      runner.seed!(extra_env: extra_env)
     end
 
-    app.setup_tasks.each { |task| docker.run_setup_task!(task, extra_env: extra_env) }
+    app.setup_tasks.each { |task| runner.run_setup_task!(task, extra_env: extra_env) }
 
-    # Dependency previews are internal-only by default: reachable by sibling
-    # containers via Docker's embedded DNS, never published to the host -
-    # most dependencies (e.g. Publishing API) are unauthenticated, state-
-    # mutating APIs that shouldn't be reachable at a guessable public-
-    # looking subdomain. A dependency can opt into a stable, public hostname
-    # via the manifest's `publicly_readable` (see HostRouter) - only safe
-    # for genuinely read-only, non-mutating APIs (e.g. Content Store).
-    container_id = docker.start!(extra_env: extra_env, publish_port: preview.parent_id.nil?)
-    docker.start_worker!(extra_env: extra_env) if app.worker_command
+    # Dependency previews are internal-only by default: reachable by other
+    # previews over cluster DNS, but never hostname-routable - most
+    # dependencies (e.g. Publishing API) are unauthenticated, state-mutating
+    # APIs that shouldn't be reachable at a guessable public-looking
+    # subdomain. A dependency can opt into a stable, public hostname via the
+    # manifest's `publicly_readable` (see HostRouter) - only safe for
+    # genuinely read-only, non-mutating APIs (e.g. Content Store).
+    container_id = runner.start!(extra_env: extra_env)
+    runner.start_worker!(extra_env: extra_env) if app.worker_command
 
     preview.update!(status: :running, container_id: container_id)
 
@@ -101,11 +94,10 @@ private
         raise DependencyError, "dependency #{dep_name} failed to start: #{dependent.status_message}"
       end
 
-      dep_container_name = DockerRunner.new(dependent).container_name
       plek_key = dep_name.upcase.tr("-", "_")
-      env["PLEK_SERVICE_#{plek_key}_URI"] = "http://#{dep_container_name}:#{dependent.port}"
-      # The internal URI above is only ever reachable by sibling containers
-      # over Docker's embedded DNS - fine for server-to-server use (e.g.
+      env["PLEK_SERVICE_#{plek_key}_URI"] = "http://#{KubernetesRunner.new(dependent).container_name}"
+      # The internal URI above is only ever reachable by other previews over
+      # cluster DNS - fine for server-to-server use (e.g.
       # Frontend's own Content Store lookups), but useless for a link
       # meant to be clicked in a browser (e.g. Whitehall's "Preview on
       # website"). A publicly_readable dependency also gets its real,

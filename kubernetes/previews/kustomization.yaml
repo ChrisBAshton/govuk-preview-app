@@ -1,0 +1,14 @@
+# Everything Preview App needs in the namespace previews run in - the same
+# objects locally (see ../local) and on integration (mirrored by
+# govuk-helm-charts' charts/govuk-previews). The namespace itself is created
+# separately: by kubernetes/local/namespaces.yaml locally, and by
+# govuk-infrastructure's cluster-access/namespaces.tf on integration, both
+# enforcing the `restricted` Pod Security standard.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: previews
+resources:
+  - role.yaml
+  - resource-quota.yaml
+  - network-policies.yaml
+  - redis.yaml

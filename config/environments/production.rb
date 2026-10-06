@@ -60,6 +60,7 @@ Rails.application.configure do
   config.hosts << base_domain
   config.hosts << /.*\.#{Regexp.escape(base_domain)}/
 
-  # Skip DNS rebinding protection for the default health check endpoint.
-  # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
+  # Skip DNS rebinding protection for the default health check endpoint -
+  # Kubernetes probes address the pod by IP, not by any of the hosts above.
+  config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
 end

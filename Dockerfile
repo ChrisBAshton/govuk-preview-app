@@ -13,12 +13,6 @@ RUN bundle exec rails assets:precompile && rm -fr log
 
 FROM --platform=$TARGETPLATFORM $base_image
 
-# The docker CLI is needed at runtime: this app builds and runs preview
-# containers via the host's Docker socket, rather than running any of that
-# itself inside a nested container. docker-buildx-plugin is needed too: most
-# GOV.UK apps' own Dockerfiles use BuildKit-only features (e.g. $TARGETPLATFORM).
-RUN install_packages docker.io docker-buildx git
-
 ENV GOVUK_APP_NAME=govuk-preview-app
 WORKDIR $APP_HOME
 

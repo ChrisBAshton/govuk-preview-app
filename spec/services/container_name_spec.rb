@@ -19,6 +19,13 @@ RSpec.describe ContainerName do
       expect(name).to end_with("-db")
     end
 
+    it "truncates to a custom max_length when given one" do
+      name = described_class.for("publishing-api-main-for-whitehall-main", suffix: "-db", max_length: 52)
+
+      expect(name.length).to eq(52)
+      expect(name).to end_with("-db")
+    end
+
     it "produces distinct names for slugs that only differ after the truncation point" do
       base = "a" * 60
       name_a = described_class.for("#{base}-one")

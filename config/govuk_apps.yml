@@ -1,10 +1,11 @@
-# The GOV.UK apps that Preview App knows how to build and run previews for.
+# The GOV.UK apps that Preview App knows how to run previews for. Each app's
+# image comes from ghcr.io/alphagov/govuk/<repo name> (see ImageResolver).
 #
 # This is a small manifest owned by Preview App itself (not a file each
 # previewable app's own repo has to carry).
 #
 # `env` is a fixed set of extra environment variables passed to the app's
-# container - e.g. pointing a read-only dependency (frontend's Content Store
+# pods - e.g. pointing a read-only dependency (frontend's Content Store
 # client, via Plek) at the real GOV.UK service instead of running a preview
 # of it.
 #
@@ -18,21 +19,22 @@
 # publishing-api's own `content-store` dependency resolved - not frontend's
 # own static, real-GOV.UK default below).
 #
-# `database` declares the database container this app needs (one per
-# preview, not shared). Omit entirely for apps with no database (e.g.
+# `database` declares the database this app needs (one per preview, never
+# shared - see KubernetesDatabaseRunner). Omit entirely for apps with no database (e.g.
 # frontend).
 #
 # `setup_tasks` names `bin/rails` tasks to run, in order, as one-off
-# containers after the database is seeded and before the app starts - e.g.
-# Whitehall needs a basic taxonomy in Publishing API before a document can
-# be tagged to a topic, the same way govuk-docker's own Makefile sets this
-# up (see projects/whitehall/Makefile). Not fatal if a task fails (see
-# PreviewBuilder) - same reasoning as db:seed.
+# Kubernetes Jobs after the database is seeded and before the app starts -
+# e.g. Whitehall needs a basic taxonomy in Publishing API before a document
+# can be tagged to a topic, the same way govuk-docker's own Makefile sets
+# this up (see projects/whitehall/Makefile). A failing task fails the
+# preview, with the task's error as its status message (see
+# PreviewBuilder).
 #
-# `worker_command` starts a second, long-running container from the same
-# built image (e.g. Publishing API's Sidekiq worker, which actually pushes
+# `worker_command` starts a second, long-running Deployment from the same
+# image (e.g. Publishing API's Sidekiq worker, which actually pushes
 # published content downstream to Content Store - without it, nothing
-# ever leaves Publishing API's own database). See DockerRunner#start_worker!.
+# ever leaves Publishing API's own database). See KubernetesRunner#start_worker!.
 #
 # `publicly_readable: true` makes a *dependency* preview reachable at a
 # short, randomised hostname (e.g. content-store-mvym1ob...) instead of its
@@ -42,7 +44,7 @@
 # preview already gets a perfectly good, readable hostname from its slug).
 #
 # `env_aliases` re-exposes one of this app's own *inherited* dependency
-# addresses under a different env var key, for its own container only (not
+# addresses under a different env var key, for its own pods only (not
 # propagated to siblings/the parent) - see PreviewBuilder#build!. Needed
 # when an app's own code always reads a fixed env var name regardless of
 # which physical instance it's actually talking to - e.g. draft-frontend is

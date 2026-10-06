@@ -62,7 +62,7 @@ Rails.application.configure do
   # config.generators.apply_rubocop_autocorrect_after_generate!
 
   # Allow the app's own hostname, and any preview subdomain of it (see
-  # docker-compose.yml / HostRouter) - an unmatched/stale preview subdomain
+  # HostRouter) - an unmatched/stale preview subdomain
   # then gets a normal Rails 404 rather than "Blocked hosts".
   base_domain = ENV.fetch("PREVIEW_APP_BASE_DOMAIN", "govuk-preview-app.dev.gov.uk")
   config.hosts << base_domain

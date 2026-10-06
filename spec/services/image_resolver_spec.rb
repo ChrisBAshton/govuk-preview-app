@@ -1,0 +1,62 @@
+require "rails_helper"
+
+RSpec.describe ImageResolver do
+  let(:app) { GovukApps.find("whitehall") }
+  let(:manifest_url) { %r{\Ahttps://ghcr\.io/v2/alphagov/govuk/whitehall/manifests/} }
+
+  def resolver_for(branch)
+    described_class.new(app, branch).tap { |resolver| allow(resolver).to receive(:pause) }
+  end
+
+  before do
+    stub_request(:get, "https://ghcr.io/token?scope=repository:alphagov/govuk/whitehall:pull")
+      .to_return(json_response({ token: "anon" }))
+  end
+
+  it "derives the image name from the manifest's repo_url" do
+    expect(resolver_for("main").image_name).to eq("whitehall")
+  end
+
+  it "resolves main to the latest release tag's image" do
+    stub_request(:get, "https://api.github.com/repos/alphagov/whitehall/releases/latest")
+      .to_return(json_response({ tag_name: "v3355" }))
+    stub_request(:head, "https://ghcr.io/v2/alphagov/govuk/whitehall/manifests/v3355").to_return(status: 200)
+
+    expect(resolver_for("main").resolve!).to eq("ghcr.io/alphagov/govuk/whitehall:v3355")
+  end
+
+  it "resolves a branch to its head commit's image, waiting until it's been pushed" do
+    stub_request(:get, "https://api.github.com/repos/alphagov/whitehall/commits/feature%2Fmy-branch")
+      .to_return(json_response({ sha: "abc123" }))
+    manifest = stub_request(:head, "https://ghcr.io/v2/alphagov/govuk/whitehall/manifests/abc123")
+      .to_return({ status: 404 }, { status: 200 })
+
+    expect(resolver_for("feature/my-branch").resolve!).to eq("ghcr.io/alphagov/govuk/whitehall:abc123")
+    expect(manifest).to have_been_requested.twice
+  end
+
+  it "points the image at PREVIEW_APP_IMAGE_REGISTRY when set (e.g. the ECR pull-through cache)" do
+    stub_request(:get, "https://api.github.com/repos/alphagov/whitehall/releases/latest").to_return(json_response({ tag_name: "v1" }))
+    stub_request(:head, manifest_url).to_return(status: 200)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("PREVIEW_APP_IMAGE_REGISTRY", anything).and_return("123.dkr.ecr.eu-west-1.amazonaws.com/github/alphagov/govuk")
+
+    expect(resolver_for("main").resolve!).to eq("123.dkr.ecr.eu-west-1.amazonaws.com/github/alphagov/govuk/whitehall:v1")
+  end
+
+  it "raises a helpful error when the image never appears" do
+    stub_request(:get, %r{api\.github\.com/repos/alphagov/whitehall/commits/}).to_return(json_response({ sha: "abc123" }))
+    stub_request(:head, manifest_url).to_return(status: 404)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("PREVIEW_APP_IMAGE_WAIT_SECONDS", 1800).and_return("-1")
+
+    expect { resolver_for("my-branch").resolve! }
+      .to raise_error(described_class::ImageError, /whitehall:abc123 was published.*Build image from PR/)
+  end
+
+  it "raises when the branch doesn't exist" do
+    stub_request(:get, %r{api\.github\.com/repos/alphagov/whitehall/commits/}).to_return(status: 404)
+
+    expect { resolver_for("no-such-branch").resolve! }.to raise_error(described_class::ImageError, /Couldn't find "no-such-branch"/)
+  end
+end

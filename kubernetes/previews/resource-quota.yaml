@@ -1,0 +1,31 @@
+# The hard cap on what previews can use between them - once reached, new
+# preview pods are refused rather than scaling the cluster up indefinitely.
+# A full Whitehall stack (Whitehall, MySQL, Publishing API + worker +
+# Postgres, two Content Stores + Postgres, two Frontends) requests roughly
+# 3.5Gi with the defaults in KubernetesRunner/KubernetesDatabaseRunner.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: previews
+spec:
+  hard:
+    requests.memory: 24Gi
+    limits.memory: 64Gi
+    requests.storage: 60Gi
+    persistentvolumeclaims: "60"
+    pods: "150"
+---
+# Defaults for anything that doesn't set its own (a ResourceQuota on
+# memory makes every pod declare requests/limits, or be rejected).
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: previews
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 50m
+        memory: 256Mi
+      default:
+        memory: 1Gi

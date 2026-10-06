@@ -26,8 +26,8 @@ RSpec.describe HostRouter do
     expect(status).to eq(200)
   end
 
-  it "proxies to the matching running preview's container, ignoring any port in the Host header" do
-    preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running, port: 20_123)
+  it "proxies to the matching running preview's Service, ignoring any port in the Host header" do
+    preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
     proxy = instance_double(Rack::Proxy, call: [200, {}, %w[proxied]])
     allow(Rack::Proxy).to receive(:new).and_return(proxy)
     router = described_class.new(app)
@@ -36,12 +36,12 @@ RSpec.describe HostRouter do
     router.call(env)
 
     expect(proxy).to have_received(:call).with(
-      hash_including("rack.backend" => "http://govuk-preview-app-#{preview.slug}:20123"),
+      hash_including("rack.backend" => "http://govuk-preview-app-#{preview.slug}.previews.svc.cluster.local"),
     )
   end
 
   it "does not proxy a preview that exists but isn't running" do
-    create(:preview, app_name: "frontend", branch: "my-branch", status: :building)
+    create(:preview, app_name: "frontend", branch: "my-branch", status: :waiting_for_image)
 
     status, = router.call(env_for("frontend-my-branch.#{Preview.base_domain}"))
 
@@ -49,8 +49,8 @@ RSpec.describe HostRouter do
   end
 
   it "does not proxy a running dependency preview - it's internal-only, never hostname-routable" do
-    parent = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running, port: 20_000)
-    dependent = create(:preview, app_name: "publishing-api", branch: "main", parent: parent, status: :running, port: 20_001)
+    parent = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running)
+    dependent = create(:preview, app_name: "publishing-api", branch: "main", parent: parent, status: :running)
 
     status, = router.call(env_for(dependent.hostname))
 
@@ -58,8 +58,8 @@ RSpec.describe HostRouter do
   end
 
   it "proxies a dependency preview whose app is publicly_readable, at its randomised public hostname" do
-    parent = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running, port: 20_000)
-    dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent, status: :running, port: 20_001)
+    parent = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running)
+    dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent, status: :running)
     proxy = instance_double(Rack::Proxy, call: [200, {}, %w[proxied]])
     allow(Rack::Proxy).to receive(:new).and_return(proxy)
     router = described_class.new(app)
@@ -67,13 +67,13 @@ RSpec.describe HostRouter do
     router.call(env_for(dependent.hostname))
 
     expect(proxy).to have_received(:call).with(
-      hash_including("rack.backend" => "http://#{DockerRunner.new(dependent).container_name}:20001"),
+      hash_including("rack.backend" => "http://#{KubernetesRunner.new(dependent).service_host}"),
     )
   end
 
   it "does not proxy a publicly_readable dependency preview by its real (internal) slug" do
-    parent = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running, port: 20_000)
-    dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent, status: :running, port: 20_001)
+    parent = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running)
+    dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent, status: :running)
 
     status, = router.call(env_for("#{dependent.slug}.#{Preview.base_domain}"))
 

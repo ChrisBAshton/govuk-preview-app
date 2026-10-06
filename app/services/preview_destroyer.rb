@@ -1,7 +1,8 @@
-# Stops/removes a preview's container, database (if any) and checkout, then
+# Deletes a preview's Kubernetes objects (Deployments, Services, Jobs,
+# ConfigMap, and its database's StatefulSet and volume, if any), then
 # destroys its record - recursing into its dependents *first*, since each
-# owns its own container/DB/checkout that a plain AR `dependent: :destroy`
-# can't clean up (see Preview#dependents).
+# owns its own objects that a plain AR `dependent: :destroy` can't clean up
+# (see Preview#dependents).
 class PreviewDestroyer
   attr_reader :preview
 
@@ -12,12 +13,10 @@ class PreviewDestroyer
   def destroy!
     preview.dependents.each { |dependent| self.class.new(dependent).destroy! }
 
-    DockerRunner.new(preview).stop!
+    KubernetesRunner.new(preview).stop!
 
     database = GovukApps.find(preview.app_name)&.database
-    DatabaseRunner.new(preview, database).stop! if database
-
-    Checkout.new(preview).remove!
+    KubernetesDatabaseRunner.new(preview, database).stop! if database
 
     preview.destroy!
   end

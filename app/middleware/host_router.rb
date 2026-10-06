@@ -1,5 +1,5 @@
 # Dispatches requests for a running preview's hostname straight to its
-# sibling container, without ever reaching this app's own routing/auth -
+# Service in the previews namespace, without ever reaching this app's own routing/auth -
 # mirroring the target integration shape (one wildcard entry point -> one
 # Preview App process -> internal Host-header dispatch). Requests for
 # anything else (the app's own UI, or an unmatched/stale preview subdomain)
@@ -14,7 +14,7 @@ class HostRouter
     preview = matching_preview(env)
     return @app.call(env) unless preview
 
-    env["rack.backend"] = "http://#{DockerRunner.new(preview).container_name}:#{preview.port}"
+    env["rack.backend"] = "http://#{KubernetesRunner.new(preview).service_host}"
     @proxy.call(env)
   end
 

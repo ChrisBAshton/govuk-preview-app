@@ -1,14 +1,11 @@
 module GovukApps
-  # We `docker build`/`docker run` whatever a manifest entry's `repo_url`
-  # points at, as root, via a Docker daemon Preview App itself has full
-  # access to (see Checkout, DockerRunner) - an untrusted repo here isn't
-  # just "the wrong code gets previewed", it's arbitrary build/run
-  # instructions on the same node. Restricting to a single, known GitHub
-  # org is a hard invariant, not just a config convention: enforced once
-  # here (so a bad manifest entry stops the app booting at all, loudly,
-  # rather than quietly being previewable) and again at the actual clone
-  # in Checkout (in case some future code path ever builds a Definition
-  # some other way, bypassing this).
+  # We run whatever image a manifest entry's `repo_url` resolves to (see
+  # ImageResolver) - an untrusted repo here isn't just "the wrong code gets
+  # previewed", it's arbitrary code running in the cluster. Restricting to
+  # a single, known GitHub org is a hard invariant, not just a config
+  # convention: enforced here, so a bad manifest entry stops the app booting
+  # at all, loudly, rather than quietly being previewable. (ImageResolver
+  # also only ever pulls from ghcr.io/alphagov/govuk.)
   TRUSTED_GITHUB_ORG = "alphagov".freeze
 
   Database = Struct.new(:adapter, :image, keyword_init: true)

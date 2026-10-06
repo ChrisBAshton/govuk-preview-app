@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Rebuilds Preview App's image, loads it into the local kind cluster, and
+# (re)applies every manifest - run this after changing Preview App's code.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+CLUSTER=govuk-preview-app
+# Always explicit, so this can never touch any other cluster your kubectl
+# happens to be pointed at.
+KUBECTL=(kubectl --context "kind-$CLUSTER")
+
+docker build -t govuk-preview-app:dev .
+kind load docker-image govuk-preview-app:dev --name "$CLUSTER"
+
+"${KUBECTL[@]}" apply -k kubernetes/local
+"${KUBECTL[@]}" -n apps rollout restart deployment/govuk-preview-app deployment/govuk-preview-app-worker
+"${KUBECTL[@]}" -n apps rollout status deployment/govuk-preview-app --timeout=5m
+
+echo
+echo "Preview App is running at http://govuk-preview-app.dev.gov.uk:8080/previews"

@@ -1,0 +1,35 @@
+# Preview App's own Redis, for its Sidekiq queue (on integration,
+# generic-govuk-app's `redis.enabled`). Separate from the previews' shared
+# Redis in the previews namespace, which preview pods can't reach this one
+# from anyway (see ../previews/network-policies.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: apps
+spec:
+  selector:
+    app.kubernetes.io/name: govuk-preview-app-redis
+  ports:
+    - port: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: govuk-preview-app-redis
+  namespace: apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: govuk-preview-app-redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: govuk-preview-app-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:8.6
+          ports:
+            - containerPort: 6379
