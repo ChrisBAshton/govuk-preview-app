@@ -64,11 +64,22 @@
 # that would have used a left-out dependency is pointed at a stand-in that
 # accepts and discards everything instead (kubernetes/previews/sink.yaml).
 #
+# `memory` sets what each of the app's pods (web, worker and one-off tasks)
+# requests and is limited to - and `database: memory:`, its database's.
+# Requests are what Kubernetes schedules by and charges the previews quota
+# for, so they're sized from real usage (bin/preview-usage): roughly 25%
+# above what a lightly-used preview of the app uses once booted. Limits
+# leave 2-3x headroom for boot and spikes. Apps without one get a generous
+# default (see KubernetesRunner.memory_for) until they've been measured.
+#
 # `resync_tasks` names `bin/rails` tasks to run when a running preview is
 # switched to the full stack - e.g. re-sending everything Publishing API
 # holds to the Content Stores that have just been added.
 
 frontend:
+  memory:
+    request: 176Mi
+    limit: 512Mi
   repo_url: https://github.com/alphagov/frontend.git
   port_env_var: PORT
   publicly_readable: true
@@ -76,6 +87,9 @@ frontend:
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
 
 draft-frontend:
+  memory:
+    request: 176Mi
+    limit: 512Mi
   repo_url: https://github.com/alphagov/frontend.git
   port_env_var: PORT
   publicly_readable: true
@@ -89,27 +103,45 @@ draft-frontend:
     PLEK_HOSTNAME_PREFIX: "draft-"
 
 content-store:
+  memory:
+    request: 160Mi
+    limit: 512Mi
   repo_url: https://github.com/alphagov/content-store.git
   port_env_var: PORT
   database:
     adapter: postgresql
     image: postgres:17
+    memory:
+      request: 48Mi
+      limit: 256Mi
   publicly_readable: true
 
 draft-content-store:
+  memory:
+    request: 160Mi
+    limit: 512Mi
   repo_url: https://github.com/alphagov/content-store.git
   port_env_var: PORT
   database:
     adapter: postgresql
     image: postgres:17
+    memory:
+      request: 48Mi
+      limit: 256Mi
   publicly_readable: true
 
 publishing-api:
+  memory:
+    request: 288Mi
+    limit: 768Mi
   repo_url: https://github.com/alphagov/publishing-api.git
   port_env_var: PORT
   database:
     adapter: postgresql
     image: postgres:17
+    memory:
+      request: 48Mi
+      limit: 256Mi
   full_stack_dependencies:
     - content-store
     - draft-content-store
@@ -124,11 +156,17 @@ publishing-api:
     DISABLE_QUEUE_PUBLISHER: "1"
 
 whitehall:
+  memory:
+    request: 288Mi
+    limit: 768Mi
   repo_url: https://github.com/alphagov/whitehall.git
   port_env_var: PORT
   database:
     adapter: mysql2
     image: mysql:8
+    memory:
+      request: 224Mi
+      limit: 512Mi
   dependencies:
     - publishing-api
   full_stack_dependencies:

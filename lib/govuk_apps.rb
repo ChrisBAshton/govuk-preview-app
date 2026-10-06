@@ -8,10 +8,10 @@ module GovukApps
   # also only ever pulls from ghcr.io/alphagov/govuk.)
   TRUSTED_GITHUB_ORG = "alphagov".freeze
 
-  Database = Struct.new(:adapter, :image, keyword_init: true)
+  Database = Struct.new(:adapter, :image, :memory, keyword_init: true)
   Definition = Struct.new(
     :name, :repo_url, :port_env_var, :env, :dependencies, :database, :setup_tasks,
-    :worker_command, :publicly_readable, :env_aliases, :full_stack_dependencies, :resync_tasks, keyword_init: true
+    :worker_command, :publicly_readable, :env_aliases, :full_stack_dependencies, :resync_tasks, :memory, keyword_init: true
   )
 
   def self.all
@@ -25,6 +25,7 @@ module GovukApps
       database = attrs["database"] && Database.new(
         adapter: attrs["database"].fetch("adapter"),
         image: attrs["database"].fetch("image"),
+        memory: attrs["database"]["memory"],
       )
 
       Definition.new(
@@ -40,6 +41,7 @@ module GovukApps
         env_aliases: attrs.fetch("env_aliases", {}),
         full_stack_dependencies: attrs.fetch("full_stack_dependencies", []),
         resync_tasks: attrs.fetch("resync_tasks", []),
+        memory: attrs["memory"],
       )
     end
   end

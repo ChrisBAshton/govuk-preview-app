@@ -66,14 +66,15 @@ class KubernetesRunner
     }
   end
 
-  # What every app/worker/task pod asks for - also what PreviewCapacity
-  # adds up to work out how much room a whole preview stack needs.
-  def self.memory_request
-    ENV.fetch("PREVIEW_APP_POD_MEMORY_REQUEST", "384Mi")
-  end
-
-  def self.memory_limit
-    ENV.fetch("PREVIEW_APP_POD_MEMORY_LIMIT", "1536Mi")
+  # What each of an app's pods (web, worker and tasks) asks for: its
+  # manifest entry's `memory`, measured with bin/preview-usage - or, for an
+  # app without one, a generous default. Also what PreviewCapacity adds up
+  # to work out how much room a whole preview stack needs.
+  def self.memory_for(app)
+    {
+      request: app.memory&.fetch("request", nil) || ENV.fetch("PREVIEW_APP_POD_MEMORY_REQUEST", "384Mi"),
+      limit: app.memory&.fetch("limit", nil) || ENV.fetch("PREVIEW_APP_POD_MEMORY_LIMIT", "1536Mi"),
+    }
   end
 
   # While a pod can't be scheduled (e.g. "0/1 nodes are available: 1
@@ -246,6 +247,10 @@ private
     command.include?("sidekiq") ? [*command, "-c", WORKER_CONCURRENCY.to_s] : command
   end
 
+  def memory
+    self.class.memory_for(GovukApps.find(preview.app_name))
+  end
+
   def deployment_names
     worker = GovukApps.find(preview.app_name).worker_command
     worker ? [container_name, worker_container_name] : [container_name]
@@ -299,9 +304,9 @@ private
       resources: {
         requests: {
           cpu: ENV.fetch("PREVIEW_APP_POD_CPU_REQUEST", "50m"),
-          memory: self.class.memory_request,
+          memory: memory[:request],
         },
-        limits: { memory: self.class.memory_limit },
+        limits: { memory: memory[:limit] },
       },
       securityContext: self.class.container_security_context,
       volumeMounts: [{ name: "overrides", mountPath: OVERRIDES_PATH, subPath: OVERRIDES_KEY, readOnly: true }],

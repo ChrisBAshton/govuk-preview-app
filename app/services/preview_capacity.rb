@@ -95,15 +95,15 @@ private
   def stack_needs
     pods = [root.app_name, *GovukApps.dependency_tree(root.app_name, full_stack: root.full_stack)].flat_map do |app_name|
       app = GovukApps.find(app_name)
-      app_pods = [KubernetesRunner] * (app.worker_command ? 2 : 1)
-      app.database ? [*app_pods, KubernetesDatabaseRunner] : app_pods
+      app_pods = [KubernetesRunner.memory_for(app)] * (app.worker_command ? 2 : 1)
+      app.database ? [*app_pods, KubernetesDatabaseRunner.memory_for(app.database)] : app_pods
     end
-    pods << StackRedis
-    pods << KubernetesRunner if building
+    pods << StackRedis.memory
+    pods << KubernetesRunner.memory_for(GovukApps.find(root.app_name)) if building
 
     {
-      "requests.memory" => pods.sum { |runner| MemoryQuantity.to_mi(runner.memory_request) },
-      "limits.memory" => pods.sum { |runner| MemoryQuantity.to_mi(runner.memory_limit) },
+      "requests.memory" => pods.sum { |memory| MemoryQuantity.to_mi(memory[:request]) },
+      "limits.memory" => pods.sum { |memory| MemoryQuantity.to_mi(memory[:limit]) },
     }
   end
 

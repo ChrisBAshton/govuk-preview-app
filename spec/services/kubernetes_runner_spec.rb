@@ -43,6 +43,18 @@ RSpec.describe KubernetesRunner do
     end
   end
 
+  describe ".memory_for" do
+    it "uses an app's measured memory settings from the manifest" do
+      expect(described_class.memory_for(GovukApps.find("whitehall"))).to eq(request: "288Mi", limit: "768Mi")
+    end
+
+    it "falls back to a generous default for an app that hasn't been measured yet" do
+      unmeasured = GovukApps::Definition.new(name: "new-app", memory: nil)
+
+      expect(described_class.memory_for(unmeasured)).to eq(request: "384Mi", limit: "1536Mi")
+    end
+  end
+
   describe "#prepare!" do
     it "applies a ConfigMap holding the config overrides" do
       apply_stub("v1", "configmaps", "govuk-preview-app-#{preview.slug}-overrides")

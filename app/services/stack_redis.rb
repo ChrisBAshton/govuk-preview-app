@@ -16,12 +16,11 @@ class StackRedis
   MAX_DATABASES = 16
   PORT = 6379
 
-  def self.memory_request
-    ENV.fetch("PREVIEW_APP_REDIS_MEMORY_REQUEST", "32Mi")
-  end
-
-  def self.memory_limit
-    ENV.fetch("PREVIEW_APP_REDIS_MEMORY_LIMIT", "128Mi")
+  def self.memory
+    {
+      request: ENV.fetch("PREVIEW_APP_REDIS_MEMORY_REQUEST", "32Mi"),
+      limit: ENV.fetch("PREVIEW_APP_REDIS_MEMORY_LIMIT", "128Mi"),
+    }
   end
 
   # The REDIS_URL for a preview's pods - its stack's Redis, and its app's
@@ -110,8 +109,8 @@ private
                 args: ["--save", "", "--appendonly", "no", "--databases", MAX_DATABASES.to_s],
                 ports: [{ name: "redis", containerPort: PORT }],
                 resources: {
-                  requests: { cpu: "10m", memory: self.class.memory_request },
-                  limits: { memory: self.class.memory_limit },
+                  requests: { cpu: "10m", memory: self.class.memory[:request] },
+                  limits: { memory: self.class.memory[:limit] },
                 },
                 securityContext: KubernetesRunner.container_security_context,
               },

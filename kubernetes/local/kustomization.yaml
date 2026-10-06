@@ -15,9 +15,9 @@ patches:
   # One kind node can't hold what integration's quota allows - set the
   # quota to what it can, so PreviewCapacity puts previews to sleep before
   # the node runs out of memory. ~7.75Gi allocatable, less ~0.3Gi for
-  # Kubernetes' own pods: room for one full Whitehall stack and a build
-  # alongside other small previews, but not two Whitehall stacks at once.
-  # (Limits can safely overcommit - only requests decide scheduling.)
+  # Kubernetes' own pods: room for three full Whitehall stacks (~2.2Gi
+  # each) awake at once, or more core ones. (Limits can safely overcommit -
+  # only requests decide scheduling.)
   - target:
       kind: ResourceQuota
       name: previews

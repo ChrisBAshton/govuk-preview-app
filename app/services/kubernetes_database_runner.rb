@@ -20,13 +20,12 @@ class KubernetesDatabaseRunner
 
   attr_reader :preview, :database
 
-  # See KubernetesRunner.memory_request.
-  def self.memory_request
-    ENV.fetch("PREVIEW_APP_DATABASE_MEMORY_REQUEST", "256Mi")
-  end
-
-  def self.memory_limit
-    ENV.fetch("PREVIEW_APP_DATABASE_MEMORY_LIMIT", "1Gi")
+  # See KubernetesRunner.memory_for.
+  def self.memory_for(database)
+    {
+      request: database.memory&.fetch("request", nil) || ENV.fetch("PREVIEW_APP_DATABASE_MEMORY_REQUEST", "256Mi"),
+      limit: database.memory&.fetch("limit", nil) || ENV.fetch("PREVIEW_APP_DATABASE_MEMORY_LIMIT", "1Gi"),
+    }
   end
 
   def initialize(preview, database, api: KubernetesApi.new)
@@ -142,8 +141,8 @@ private
       ports: [{ name: "db", containerPort: port }],
       readinessProbe: { exec: { command: ready_command }, periodSeconds: 3 },
       resources: {
-        requests: { cpu: "50m", memory: self.class.memory_request },
-        limits: { memory: self.class.memory_limit },
+        requests: { cpu: "50m", memory: self.class.memory_for(database)[:request] },
+        limits: { memory: self.class.memory_for(database)[:limit] },
       },
       securityContext: KubernetesRunner.container_security_context,
       volumeMounts: [{ name: "data", mountPath: VOLUME_MOUNT }],

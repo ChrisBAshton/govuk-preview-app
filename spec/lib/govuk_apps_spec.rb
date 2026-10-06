@@ -129,6 +129,13 @@ RSpec.describe GovukApps do
       expect(described_class.dependency_tree("whitehall", full_stack: false)).to eq(%w[publishing-api])
     end
 
+    it "parses each app's, and its database's, memory settings" do
+      whitehall = described_class.find("whitehall")
+
+      expect(whitehall.memory).to eq("request" => "288Mi", "limit" => "768Mi")
+      expect(whitehall.database.memory).to eq("request" => "224Mi", "limit" => "512Mi")
+    end
+
     it "parses resync_tasks" do
       expect(described_class.find("publishing-api").resync_tasks).to eq(%w[represent_downstream:all])
     end
