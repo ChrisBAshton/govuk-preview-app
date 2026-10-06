@@ -122,5 +122,14 @@ RSpec.describe GovukApps do
         %w[publishing-api content-store draft-content-store frontend draft-frontend],
       )
     end
+
+    it "leaves out full-stack-only dependencies, at any depth, for a core stack" do
+      expect(described_class.dependency_tree("whitehall", full_stack: false)).to eq(%w[publishing-api])
+    end
+
+    it "parses full_stack_only and resync_tasks" do
+      expect(described_class.find("content-store").full_stack_only).to be(true)
+      expect(described_class.find("publishing-api")).to have_attributes(full_stack_only: false, resync_tasks: %w[represent_downstream:all])
+    end
   end
 end

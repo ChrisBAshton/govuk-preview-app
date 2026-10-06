@@ -93,7 +93,7 @@ private
   # being built, room for the one migrate/seed/setup Job pod that runs at
   # a time.
   def stack_needs
-    pods = [root.app_name, *GovukApps.dependency_tree(root.app_name)].flat_map do |app_name|
+    pods = [root.app_name, *GovukApps.dependency_tree(root.app_name, full_stack: root.full_stack)].flat_map do |app_name|
       app = GovukApps.find(app_name)
       app_pods = [KubernetesRunner] * (app.worker_command ? 2 : 1)
       app.database ? [*app_pods, KubernetesDatabaseRunner] : app_pods

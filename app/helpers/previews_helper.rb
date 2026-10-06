@@ -11,6 +11,12 @@ module PreviewsHelper
   end
 
   # What the branch field accepts - see ImageResolver.
+  # Whether this app's full stack differs from its core stack at all - e.g.
+  # not for Frontend, which has no dependencies.
+  def has_full_stack_extras?(preview)
+    GovukApps.dependency_tree(preview.app_name) != GovukApps.dependency_tree(preview.app_name, full_stack: false)
+  end
+
   def preview_action(text, path, modifier, method: :post, **options)
     button_to(text, path, method:, class: "govuk-button #{modifier} govuk-!-margin-bottom-0", form_class: "govuk-!-display-inline-block", **options)
   end
@@ -31,6 +37,10 @@ module PreviewsHelper
   def preview_actions(preview)
     buttons = []
     buttons << preview_action("Sleep", sleep_preview_path(preview), "govuk-button--secondary") if preview.running?
+    if preview.running? && preview.status_message.blank? && has_full_stack_extras?(preview)
+      label = preview.full_stack? ? "Remove full stack" : "Add full stack"
+      buttons << preview_action(label, resize_preview_path(preview, full_stack: !preview.full_stack?), "govuk-button--secondary")
+    end
     buttons << preview_action("Wake", wake_preview_path(preview), "govuk-button--secondary") if preview.sleeping?
     buttons << preview_action("Retry", retry_preview_path(preview), "govuk-button--secondary") if preview.failed?
     buttons << preview_action("Delete", preview_path(preview), "govuk-button--warning", method: :delete, data: { confirm: "Are you sure?" })

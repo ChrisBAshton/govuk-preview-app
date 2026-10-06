@@ -15,8 +15,9 @@
     <h1 class="govuk-heading-xl">New preview</h1>
 
     <p class="govuk-body">
-      Runs a branch of a GOV.UK application at its own address, alongside a dedicated copy of every service it
-      depends on, each running <code>main</code>.
+      Runs a branch of a GOV.UK application at its own address, alongside a dedicated copy of the services it
+      depends on, each running <code>main</code>. By default that's just its core dependencies (e.g. Publishing
+      API for Whitehall).
     </p>
 
     <%= form_with url: previews_path, method: :post do %>
@@ -39,7 +40,23 @@
         value: @preview.branch,
       } %>
 
-      <%= render "govuk_publishing_components/components/button", text: "Create preview" %>
+      <%= render "govuk_publishing_components/components/checkboxes", {
+      name: "preview[full_stack]",
+      heading: "Stack",
+      heading_size: "s",
+      no_hint_text: true,
+      items: [
+        {
+          label: "Full stack",
+          value: "true",
+          checked: @preview.full_stack?,
+          hint: "Also runs Content Store, draft Content Store, Frontend and draft Frontend, so published and draft " \
+                "pages can be viewed - roughly twice the memory. Can be added or removed later.",
+        },
+      ],
+    } %>
+
+    <%= render "govuk_publishing_components/components/button", text: "Create preview" %>
     <% end %>
   </div>
 </div>

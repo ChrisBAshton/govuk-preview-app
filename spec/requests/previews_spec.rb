@@ -144,6 +144,37 @@ RSpec.describe "Previews" do
       expect(preview.reload).to have_attributes(status: "queued", status_message: nil)
     end
 
+    it "queues adding or removing the full stack for a running preview" do
+      preview = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running)
+
+      post resize_preview_path(preview, full_stack: true)
+
+      expect(PreviewsResizeJob.jobs.last["args"].first(2)).to eq([preview.id, true])
+    end
+
+    it "creates a core stack unless the full stack is ticked" do
+      post previews_path, params: { preview: { app_name: "whitehall", branch: "core-branch" } }
+      post previews_path, params: { preview: { app_name: "whitehall", branch: "full-branch", full_stack: "true" } }
+
+      expect(Preview.find_by(branch: "core-branch").full_stack).to be(false)
+      expect(Preview.find_by(branch: "full-branch").full_stack).to be(true)
+    end
+
+    it "offers adding or removing the full stack only for running apps that have one" do
+      create(:preview, app_name: "whitehall", branch: "core-one", status: :running)
+      create(:preview, app_name: "whitehall", branch: "full-one", status: :running, full_stack: true)
+      create(:preview, app_name: "frontend", branch: "no-extras", status: :running)
+
+      get previews_path
+
+      rows = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, row.all("button").map(&:text)] }
+      expect(rows).to eq(
+        "core-one" => ["Sleep", "Add full stack", "Delete"],
+        "full-one" => ["Sleep", "Remove full stack", "Delete"],
+        "no-extras" => %w[Sleep Delete],
+      )
+    end
+
     it "offers only the buttons that apply to each preview" do
       create(:preview, app_name: "frontend", branch: "running-one", status: :running)
       create(:preview, app_name: "frontend", branch: "sleeping-one", status: :sleeping)

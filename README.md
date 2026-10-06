@@ -20,7 +20,7 @@ On integration, images are pulled through GOV.UK's ECR pull-through cache in fro
 
 ### The manifest
 
-`config/govuk_apps.yml` (parsed by `lib/govuk_apps.rb`) lists every app Preview App can preview: its `repo_url` (which must be under `alphagov/`), an optional `database`, optional `dependencies` (other manifest entries that must be running first), optional `setup_tasks` and `worker_command`, `publicly_readable` for a dependency that's safe to make hostname-routable (see Routing), and a fixed `env` hash for anything that app needs pointed at a real GOV.UK service.
+`config/govuk_apps.yml` (parsed by `lib/govuk_apps.rb`) lists every app Preview App can preview, with `full_stack_only` marking the dependencies only run in a full stack (see [Core and full stacks](#core-and-full-stacks)): its `repo_url` (which must be under `alphagov/`), an optional `database`, optional `dependencies` (other manifest entries that must be running first), optional `setup_tasks` and `worker_command`, `publicly_readable` for a dependency that's safe to make hostname-routable (see Routing), and a fixed `env` hash for anything that app needs pointed at a real GOV.UK service.
 
 ### Building a preview
 
@@ -36,6 +36,14 @@ Creating a `Preview` (an app name + branch) enqueues `PreviewsCreateJob`, which 
 Every object is named by `ContainerName` (the preview's slug, truncated and hashed to fit Kubernetes' 63-character name limit) and labelled with the preview's id.
 
 Every preview pod runs as its image's own non-root user, with no Kubernetes API token, under the `restricted` Pod Security standard - the `previews` namespace rejects anything else.
+
+### Core and full stacks
+
+By default a preview runs its *core* stack: the app and only the dependencies it needs to work - e.g. Whitehall and Publishing API (with its worker and database). Publishing API is never left out: what a Whitehall preview is usually for is Whitehall's own interaction with it - e.g. how Whitehall handles Publishing API's validation errors - so it has to be the real thing. Content Store is downstream of Publishing API, so largely irrelevant to Whitehall itself. Ticking "Full stack" when creating a preview also runs the dependencies marked `full_stack_only` in the manifest - both Content Stores and both Frontends - so published and draft pages can actually be viewed, for roughly twice the memory.
+
+In a core stack, an app that would have used a left-out dependency is pointed at a shared stand-in instead (`kubernetes/previews/sink.yaml`), which accepts and discards everything - e.g. Publishing API, which has no setting to stop it pushing content to its Content Stores. That address is only given to the app that needs it, so e.g. Whitehall still reads the real GOV.UK Content Store, as before.
+
+A running preview can be switched between the two from the previews page (`PreviewResizer`). Nothing already running is rebuilt or loses data: the extra apps are added (or removed), and anything whose dependency addresses change is restarted with the new ones (`PreviewBuilder#reconfigure!`). On adding the full stack, Publishing API then re-sends everything it holds to the new Content Stores (`resync_tasks` in the manifest).
 
 ### Routing
 

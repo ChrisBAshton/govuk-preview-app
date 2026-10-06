@@ -47,6 +47,16 @@ class PreviewsController < ApplicationController
     redirect_to previews_path, notice: "Preview of #{preview.app_name} (#{preview.branch}) is waking up."
   end
 
+  # Adds or removes the full stack for a running preview - see
+  # PreviewResizer.
+  def resize
+    preview = Preview.find(params[:id])
+    full_stack = params[:full_stack] == "true"
+    PreviewsResizeJob.perform_async(preview.id, full_stack) if preview.running? && preview.parent.blank?
+
+    redirect_to previews_path, notice: "#{full_stack ? 'Adding' : 'Removing'} the full stack for #{preview.app_name} (#{preview.branch})."
+  end
+
   # Carries on a failed build from where it stopped: dependencies that
   # started are reused, and only what didn't finish is built again (see
   # PreviewBuilder#build!).
@@ -63,6 +73,6 @@ class PreviewsController < ApplicationController
 private
 
   def preview_params
-    params.expect(preview: %i[app_name branch])
+    params.expect(preview: %i[app_name branch full_stack])
   end
 end

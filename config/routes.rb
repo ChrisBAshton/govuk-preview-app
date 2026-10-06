@@ -9,6 +9,7 @@ Rails.application.routes.draw do
       post :sleep, action: :put_to_sleep
       post :wake
       post :retry, action: :retry_build
+      post :resize
     end
   end
 

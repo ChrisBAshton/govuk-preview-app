@@ -50,7 +50,23 @@
 # which physical instance it's actually talking to - e.g. draft-frontend is
 # the exact same codebase as frontend, which only ever reads
 # PLEK_SERVICE_CONTENT_STORE_URI (never PLEK_SERVICE_DRAFT_CONTENT_STORE_URI).
+#
+# `full_stack_only: true` marks an app that's only started as a dependency
+# when a preview asks for the full stack (Preview#full_stack) - e.g. the
+# Content Stores and Frontends, which are only needed to see published or
+# draft pages. Never for something a previewed app interacts with
+# directly - e.g. Publishing API, whose responses (validation errors and
+# all) are part of what a Whitehall preview is for. In the default, lighter core stack, the app that would have
+# used it is pointed at a stub that accepts and discards everything instead
+# (kubernetes/previews/sink.yaml). Has no effect on a top-level preview of
+# that app.
+#
+# `resync_tasks` names `bin/rails` tasks to run when a running preview is
+# switched to the full stack - e.g. re-sending everything Publishing API
+# holds to the Content Stores that have just been added.
+
 frontend:
+  full_stack_only: true
   repo_url: https://github.com/alphagov/frontend.git
   port_env_var: PORT
   publicly_readable: true
@@ -58,6 +74,7 @@ frontend:
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
 
 draft-frontend:
+  full_stack_only: true
   repo_url: https://github.com/alphagov/frontend.git
   port_env_var: PORT
   publicly_readable: true
@@ -71,6 +88,7 @@ draft-frontend:
     PLEK_HOSTNAME_PREFIX: "draft-"
 
 content-store:
+  full_stack_only: true
   repo_url: https://github.com/alphagov/content-store.git
   port_env_var: PORT
   database:
@@ -79,6 +97,7 @@ content-store:
   publicly_readable: true
 
 draft-content-store:
+  full_stack_only: true
   repo_url: https://github.com/alphagov/content-store.git
   port_env_var: PORT
   database:
@@ -96,6 +115,8 @@ publishing-api:
     - content-store
     - draft-content-store
   worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
+  resync_tasks:
+    - represent_downstream:all
   env:
     # The queue publisher broadcasts over RabbitMQ to third-party downstream
     # consumers (e.g. search-api, email-alert-api) - a separate mechanism

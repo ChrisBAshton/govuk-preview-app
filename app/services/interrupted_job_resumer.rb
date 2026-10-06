@@ -23,6 +23,14 @@ class InterruptedJobResumer
   }.freeze
 
   def self.run!
+    # A resize leaves the preview running, so it's recognised by the
+    # message it shows while in progress instead.
+    Preview.where(parent_id: nil, status: :running, status_message: [PreviewResizer::ADDING, PreviewResizer::REMOVING]).find_each do |preview|
+      next if job_pending?(PreviewsResizeJob, preview)
+
+      PreviewsResizeJob.perform_async(preview.id, preview.full_stack)
+    end
+
     JOBS.each do |job_class, statuses|
       Preview.where(parent_id: nil, status: statuses).find_each do |preview|
         next if job_pending?(job_class, preview)

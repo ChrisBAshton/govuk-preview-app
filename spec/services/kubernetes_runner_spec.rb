@@ -64,7 +64,7 @@ RSpec.describe KubernetesRunner do
 
     it "applies a Service and a restricted-compliant Deployment, waits until it's available, and returns its uid" do
       stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name)))
-        .to_return(json_response({ status: {} }), json_response({ status: { availableReplicas: 1 } }))
+        .to_return(json_response({ status: {} }), json_response(rolled_out_deployment))
 
       expect(runner.start!(extra_env: { "PLEK_SERVICE_CONTENT_STORE_URI" => "http://cs" })).to eq("deploy-uid")
 
@@ -100,6 +100,18 @@ RSpec.describe KubernetesRunner do
       )
     end
 
+    it "keeps waiting while the old pod is still serving, until the new version has fully rolled out" do
+      old_pod_still_up = { metadata: { generation: 3 },
+                           spec: { replicas: 1 },
+                           status: { observedGeneration: 3, replicas: 2, updatedReplicas: 1, availableReplicas: 1 } }
+      deployment = stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name)))
+        .to_return(json_response(old_pod_still_up), json_response(rolled_out_deployment))
+
+      runner.start!
+
+      expect(deployment).to have_been_requested.twice
+    end
+
     it "raises when the Deployment never becomes available" do
       stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name))).to_return(json_response({ status: {} }))
       allow(ENV).to receive(:fetch).and_call_original
@@ -109,7 +121,7 @@ RSpec.describe KubernetesRunner do
     end
 
     it "pulls a registry image only if it isn't already on the node" do
-      stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name))).to_return(json_response({ status: { availableReplicas: 1 } }))
+      stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name))).to_return(json_response(rolled_out_deployment))
 
       runner.start!
 
@@ -120,7 +132,7 @@ RSpec.describe KubernetesRunner do
       let(:image) { "govuk-preview-local/publishing-api:my-branch-abc1234" }
 
       it "never tries to pull it" do
-        stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name))).to_return(json_response({ status: { availableReplicas: 1 } }))
+        stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name))).to_return(json_response(rolled_out_deployment))
 
         runner.start!
 
@@ -140,7 +152,7 @@ RSpec.describe KubernetesRunner do
 
     it "keeps waiting through a registry pull that may yet succeed" do
       stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name)))
-        .to_return(json_response({ status: {} }), json_response({ status: { availableReplicas: 1 } }))
+        .to_return(json_response({ status: {} }), json_response(rolled_out_deployment))
       stub_pod_waiting("ImagePullBackOff")
 
       expect(runner.start!).to eq("deploy-uid")

@@ -215,6 +215,12 @@ class KubernetesRunner
     api.exists?(api.path("apps/v1", "deployments", container_name))
   end
 
+  # The image a running preview was started from - so it can be restarted
+  # with different settings without resolving its image again.
+  def current_image
+    api.get(api.path("apps/v1", "deployments", container_name)).dig("spec", "template", "spec", "containers", 0, "image")
+  end
+
   def running?
     available?(container_name)
   end
@@ -391,10 +397,27 @@ private
     false
   end
 
+  # Whether the Deployment's latest version is fully rolled out - the same
+  # test as `kubectl rollout status`. Merely having an available pod isn't
+  # enough: straight after a Deployment is re-applied (e.g. restarted with
+  # new dependency addresses), the *old* pod still counts as available
+  # until Kubernetes replaces it, so callers would carry on - and e.g. run
+  # a resync task - before the new settings are actually in use.
+  def rolled_out?(name)
+    deployment = api.get(api.path("apps/v1", "deployments", name))
+    replicas = deployment.dig("spec", "replicas") || 1
+    status = deployment.fetch("status", {})
+
+    status["observedGeneration"].to_i >= deployment.dig("metadata", "generation").to_i &&
+      %w[replicas updatedReplicas availableReplicas].all? { |field| status[field].to_i == replicas }
+  rescue KubernetesApi::NotFound
+    false
+  end
+
   def wait_until_available!(name)
     deadline = Time.current + start_timeout
 
-    until available?(name)
+    until rolled_out?(name)
       raise KubernetesError, "#{name} did not become ready within #{start_timeout}s" if Time.current > deadline
 
       inspect_pods!("app.kubernetes.io/instance=#{name}")

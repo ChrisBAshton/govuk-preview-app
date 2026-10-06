@@ -59,6 +59,19 @@ RSpec.describe PreviewCapacity do
     end
   end
 
+  describe "stack size" do
+    it "counts only a core stack's apps unless the full stack was asked for" do
+      stub_quota(requests_used: "0", requests_hard: "64Gi")
+      core = described_class.new(create(:preview, app_name: "whitehall", branch: "core"), api:)
+      full = described_class.new(create(:preview, app_name: "whitehall", branch: "full", full_stack: true), api:)
+
+      # whitehall + MySQL, publishing-api web + worker + Postgres
+      expect(core.send(:stack_needs)["requests.memory"]).to eq((384 * 3) + (256 * 2))
+      # ...plus two Content Stores (each with Postgres) and two Frontends
+      expect(full.send(:stack_needs)["requests.memory"]).to eq((384 * 7) + (256 * 4))
+    end
+  end
+
   describe "#make_room!" do
     let(:sleepers) { {} }
 

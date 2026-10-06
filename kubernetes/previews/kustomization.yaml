@@ -12,3 +12,4 @@ resources:
   - resource-quota.yaml
   - network-policies.yaml
   - redis.yaml
+  - sink.yaml

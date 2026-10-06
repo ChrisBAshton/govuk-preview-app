@@ -6,6 +6,10 @@
 class PreviewBuilder
   class DependencyError < StandardError; end
 
+  # Where a dependency left out of a core stack points instead - see
+  # `full_stack_only` in config/govuk_apps.yml.
+  SINK_URI = "http://sink".freeze
+
   RESCUED_ERRORS = [
     ImageResolver::ImageError,
     KubernetesApi::Error,
@@ -39,12 +43,8 @@ class PreviewBuilder
     # Room for the whole stack is made once, up front, by its top-level
     # preview - putting least recently used previews to sleep if need be.
     PreviewCapacity.make_room_for!(preview, building: true) if preview.parent_id.nil? && !preview.running?
-    dependency_env = inherited_env.merge(build_dependencies!(app, inherited_env))
-
-    # Nothing of its own to start - but a running dependency's own
-    # dependencies' addresses still need passing on to its later siblings
-    # (see above), exactly as when it was first built.
-    return dependency_env if preview.running?
+    propagated_env, own_env = build_dependencies!(app, inherited_env)
+    dependency_env = inherited_env.merge(propagated_env)
 
     # Lets an app read one of its own inherited dependencies' resolved
     # addresses under a *different* env var name, for its own container
@@ -61,7 +61,20 @@ class PreviewBuilder
     aliased_env = app.env_aliases.filter_map { |to_key, from_key|
       [to_key, dependency_env[from_key]] if dependency_env.key?(from_key)
     }.to_h
-    extra_env = dependency_env.merge(aliased_env)
+    # own_env (dependencies this stack leaves out, pointed at the sink) is
+    # for this preview only - never passed on, so e.g. Whitehall keeps
+    # reading the real GOV.UK Content Store rather than inheriting Publishing
+    # API's stand-in for its own.
+    extra_env = dependency_env.merge(aliased_env).merge(own_env)
+
+    # Already running (e.g. resuming an interrupted build, or changing the
+    # stack's size): nothing to build, but it may need restarting with
+    # different dependency addresses - and its own dependencies' addresses
+    # still need passing on to its later siblings, as when first built.
+    if preview.running?
+      reconfigure!(app, extra_env)
+      return dependency_env
+    end
 
     # Nothing is built here - see ImageResolver for where images come from.
     preview.update!(status: :waiting_for_image)
@@ -89,7 +102,7 @@ class PreviewBuilder
     container_id = runner.start!(extra_env: extra_env)
     runner.start_worker!(extra_env: extra_env) if app.worker_command
 
-    preview.update!(status: :running, container_id: container_id, last_accessed_at: Time.current)
+    preview.update!(status: :running, container_id: container_id, last_accessed_at: Time.current, env_digest: digest(extra_env))
 
     dependency_env
   rescue *RESCUED_ERRORS => e
@@ -99,8 +112,44 @@ class PreviewBuilder
 
 private
 
+  # Restarts an already-running preview's pods with new dependency
+  # addresses if they've changed since it was started - e.g. when its stack
+  # is switched to or from the full stack. Only its Deployments are
+  # re-applied (same image), so its database is untouched. When the full
+  # stack has just been added, its `resync_tasks` then fill the newly-added
+  # dependencies (e.g. Publishing API re-sends everything to the new Content
+  # Stores).
+  def reconfigure!(app, extra_env)
+    extra_env = extra_env.merge("DATABASE_URL" => KubernetesDatabaseRunner.new(preview, app.database).database_url) if app.database
+    return if preview.env_digest == digest(extra_env)
+
+    runner = KubernetesRunner.new(preview, image: KubernetesRunner.new(preview).current_image)
+    runner.start!(extra_env: extra_env)
+    runner.start_worker!(extra_env: extra_env) if app.worker_command
+    app.resync_tasks.each { |task| runner.run_setup_task!(task, extra_env: extra_env) } if preview.root.full_stack
+
+    preview.update!(env_digest: digest(extra_env))
+  end
+
+  def digest(env)
+    Digest::SHA256.hexdigest(env.sort.to_h.to_json)
+  end
+
+  def left_out?(dep_name)
+    GovukApps.find(dep_name).full_stack_only && !preview.root.full_stack
+  end
+
+  # Returns [env passed on to later siblings and the parent, env for this
+  # preview alone].
   def build_dependencies!(app, inherited_env)
-    app.dependencies.each_with_object({}) do |dep_name, env|
+    own_env = {}
+
+    propagated_env = app.dependencies.each_with_object({}) do |dep_name, env|
+      if left_out?(dep_name)
+        own_env["PLEK_SERVICE_#{dep_name.upcase.tr('-', '_')}_URI"] = SINK_URI
+        next
+      end
+
       dependent = preview.dependents.find_by(app_name: dep_name) ||
         Preview.create!(app_name: dep_name, branch: "main", parent: preview)
       resolved_env = self.class.new(dependent).build!(inherited_env: inherited_env.merge(env))
@@ -120,5 +169,7 @@ private
       env["PLEK_SERVICE_#{plek_key}_PUBLIC_URL"] = dependent.url if dependent.publicly_readable?
       env.merge!(resolved_env)
     end
+
+    [propagated_env, own_env]
   end
 end

@@ -34,7 +34,7 @@ RSpec.describe PreviewSleeper do
     before do
       allow(PreviewCapacity).to receive(:make_room_for!)
       stub_request(:get, %r{/statefulsets/}).to_return(json_response({ status: { readyReplicas: 1 } }))
-      stub_request(:get, %r{/deployments/}).to_return(json_response({ status: { availableReplicas: 1 } }))
+      stub_request(:get, %r{/deployments/}).to_return(json_response(rolled_out_deployment))
       sleeper.sleep!
       scaled.clear
     end

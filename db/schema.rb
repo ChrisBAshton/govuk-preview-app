@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_06_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_06_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -26,6 +26,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_110000) do
     t.bigint "parent_id"
     t.string "public_hostname"
     t.datetime "last_accessed_at"
+    t.boolean "full_stack", default: false, null: false
+    t.string "env_digest"
     t.index ["parent_id"], name: "index_previews_on_parent_id"
     t.index ["public_hostname"], name: "index_previews_on_public_hostname", unique: true
     t.index ["slug"], name: "index_previews_on_slug", unique: true

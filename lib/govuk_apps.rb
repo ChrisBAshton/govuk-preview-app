@@ -11,7 +11,7 @@ module GovukApps
   Database = Struct.new(:adapter, :image, keyword_init: true)
   Definition = Struct.new(
     :name, :repo_url, :port_env_var, :env, :dependencies, :database, :setup_tasks,
-    :worker_command, :publicly_readable, :env_aliases, keyword_init: true
+    :worker_command, :publicly_readable, :env_aliases, :full_stack_only, :resync_tasks, keyword_init: true
   )
 
   def self.all
@@ -38,6 +38,8 @@ module GovukApps
         worker_command: attrs["worker_command"],
         publicly_readable: attrs.fetch("publicly_readable", false),
         env_aliases: attrs.fetch("env_aliases", {}),
+        full_stack_only: attrs.fetch("full_stack_only", false),
+        resync_tasks: attrs.fetch("resync_tasks", []),
       )
     end
   end
@@ -54,8 +56,13 @@ module GovukApps
   # depth, in build order - e.g. whitehall -> publishing-api,
   # content-store, draft-content-store, frontend, draft-frontend. Used to
   # work out how much room a whole preview stack needs (PreviewCapacity).
-  def self.dependency_tree(name)
-    find(name)&.dependencies.to_a.flat_map { |dep| [dep, *dependency_tree(dep)] }
+  #
+  # full_stack: false leaves out `full_stack_only` dependencies (and
+  # anything beneath them) - see PreviewBuilder.
+  def self.dependency_tree(name, full_stack: true)
+    find(name)&.dependencies.to_a
+      .select { |dep| full_stack || !find(dep).full_stack_only }
+      .flat_map { |dep| [dep, *dependency_tree(dep, full_stack:)] }
   end
 
   # Parses with URI rather than a string prefix/regex match, so a URL

@@ -18,6 +18,15 @@ module KubernetesHelper
     "#{K8S_BASE}#{path}"
   end
 
+  # A Deployment whose latest version has fully rolled out.
+  def rolled_out_deployment
+    {
+      metadata: { generation: 2 },
+      spec: { replicas: 1 },
+      status: { observedGeneration: 2, replicas: 1, updatedReplicas: 1, availableReplicas: 1 },
+    }
+  end
+
   def json_response(body, status: 200)
     { status: status, body: body.to_json, headers: { "Content-Type" => "application/json" } }
   end
