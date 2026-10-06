@@ -13,7 +13,7 @@ class PreviewReconciler
       return
     end
 
-    Preview.running.find_each do |preview|
+    Preview.where(status: %i[running sleeping]).find_each do |preview|
       missing = missing_infrastructure_for(preview)
       next if missing.blank?
 

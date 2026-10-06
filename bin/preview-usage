@@ -1,0 +1,55 @@
+#!/usr/bin/env ruby
+# Shows how much memory each preview stack's pods actually use, next to
+# what they request (what Kubernetes schedules and charges the quota for)
+# and their limits - so requests can be sized from real numbers. See
+# PreviewCapacity and config/govuk_apps.yml.
+#
+#   bin/preview-usage
+#
+# Needs metrics-server (installed locally by bin/kind-up). Usage is a
+# point-in-time reading, so take it once a stack has settled, and again
+# after using it.
+require "json"
+require "open3"
+
+CONTEXT = "kind-govuk-preview-app".freeze
+NAMESPACE = "previews".freeze
+
+def kubectl(*args)
+  out, err, status = Open3.capture3("kubectl", "--context", CONTEXT, "-n", NAMESPACE, *args)
+  abort(err) unless status.success?
+  out
+end
+
+def mi(quantity)
+  match = quantity.to_s.match(/\A(\d+(?:\.\d+)?)(Ki|Mi|Gi|k|M|G)?\z/) or return 0
+  factor = { "Ki" => 1024, "Mi" => 1024**2, "Gi" => 1024**3, "k" => 1000, "M" => 1000**2, "G" => 1000**3 }.fetch(match[2], 1)
+  (match[1].to_f * factor / 1024**2).round
+end
+
+pods = JSON.parse(kubectl("get", "pods", "-o", "json"))["items"]
+  .select { |pod| pod.dig("status", "phase") == "Running" }
+usage = JSON.parse(kubectl("get", "--raw", "/apis/metrics.k8s.io/v1beta1/namespaces/#{NAMESPACE}/pods"))["items"]
+  .to_h { |metrics| [metrics.dig("metadata", "name"), metrics["containers"].sum { |c| mi(c.dig("usage", "memory")) }] }
+
+rows = pods.map do |pod|
+  labels = pod.dig("metadata", "labels") || {}
+  containers = pod.dig("spec", "containers")
+  {
+    stack: labels["govuk-preview-app/root-id"] || "shared",
+    name: [labels["govuk-preview-app/app"] || labels["app.kubernetes.io/name"], labels["govuk-preview-app/component"]].compact.join(" "),
+    used: usage.fetch(pod.dig("metadata", "name"), 0),
+    requested: containers.sum { |c| mi(c.dig("resources", "requests", "memory")) },
+    limit: containers.sum { |c| mi(c.dig("resources", "limits", "memory")) },
+  }
+end
+
+format_row = ->(name, used, requested, limit) { sprintf("  %-38s %8s %10s %8s", name, used, requested, limit) }
+
+rows.group_by { |row| row[:stack] }.sort_by { |stack, _| stack.to_s }.each do |stack, stack_rows|
+  puts stack == "shared" ? "Shared" : "Stack of preview ##{stack}"
+  puts format_row.call("pod", "used Mi", "request Mi", "limit Mi")
+  stack_rows.sort_by { |row| row[:name] }.each { |row| puts format_row.call(row[:name], row[:used], row[:requested], row[:limit]) }
+  puts format_row.call("TOTAL", *%i[used requested limit].map { |key| stack_rows.sum { |row| row[key] } })
+  puts
+end

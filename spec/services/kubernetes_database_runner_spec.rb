@@ -4,6 +4,10 @@ RSpec.describe KubernetesDatabaseRunner do
   let(:api) { kubernetes_api }
   let(:applied_stateful_sets) { [] }
 
+  before do
+    stub_request(:get, k8s_url(api.path("v1", "pods"))).with(query: hash_including({})).to_return(json_response({ items: [] }))
+  end
+
   def runner_for(preview)
     database = GovukApps.find(preview.app_name).database
     described_class.new(preview, database, api: api).tap { |runner| allow(runner).to receive(:pause) }
@@ -47,6 +51,7 @@ RSpec.describe KubernetesDatabaseRunner do
       expect(pod["securityContext"]).to include("runAsUser" => 999, "fsGroup" => 999)
       expect(container["securityContext"]).to include("runAsNonRoot" => true, "allowPrivilegeEscalation" => false)
       expect(env).to include("POSTGRES_DB" => "app_preview", "PGDATA" => "/var/lib/preview-data/postgres")
+      expect(container["args"]).to eq(%w[-c shared_buffers=16MB -c max_connections=40 -c work_mem=2MB])
       expect(container.dig("readinessProbe", "exec", "command")).to eq(["pg_isready", "-U", "postgres", "-h", "127.0.0.1"])
       expect(sts.dig("spec", "volumeClaimTemplates", 0, "spec", "resources", "requests", "storage")).to eq("1Gi")
       expect(sts.dig("spec", "persistentVolumeClaimRetentionPolicy", "whenDeleted")).to eq("Delete")
@@ -81,7 +86,7 @@ RSpec.describe KubernetesDatabaseRunner do
       expect(runner.start!).to eq("mysql2://root@#{runner.container_name}/app_preview")
 
       container = applied_stateful_set.dig("spec", "template", "spec", "containers", 0)
-      expect(container["args"]).to eq(["--datadir=/var/lib/preview-data/mysql"])
+      expect(container["args"]).to include("--datadir=/var/lib/preview-data/mysql", "--performance-schema=OFF", "--innodb-buffer-pool-size=32M")
       expect(container.dig("readinessProbe", "exec", "command")).to include("mysqladmin", "ping")
     end
   end

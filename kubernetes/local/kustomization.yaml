@@ -10,3 +10,18 @@ resources:
   - preview-app.yaml
   - postgres.yaml
   - redis.yaml
+  - metrics-server.yaml
+patches:
+  # One kind node can't hold what integration's quota allows - set the
+  # quota to what it can, so PreviewCapacity puts previews to sleep before
+  # the node runs out of memory. ~7.75Gi allocatable, less ~0.3Gi for
+  # Kubernetes' own pods: room for three full Whitehall stacks (~2.2Gi
+  # each) awake at once, or more core ones. (Limits can safely overcommit -
+  # only requests decide scheduling.)
+  - target:
+      kind: ResourceQuota
+      name: previews
+    patch: |-
+      - op: replace
+        path: /spec/hard/requests.memory
+        value: 7Gi

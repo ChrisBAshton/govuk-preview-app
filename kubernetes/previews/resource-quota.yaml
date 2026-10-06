@@ -1,8 +1,9 @@
 # The hard cap on what previews can use between them - once reached, new
-# preview pods are refused rather than scaling the cluster up indefinitely.
-# A full Whitehall stack (Whitehall, MySQL, Publishing API + worker +
-# Postgres, two Content Stores + Postgres, two Frontends) requests roughly
-# 3.5Gi with the defaults in KubernetesRunner/KubernetesDatabaseRunner.
+# preview pods are refused rather than scaling the cluster up indefinitely,
+# and PreviewCapacity puts the least recently used previews to sleep to
+# make room. With the per-app memory settings in config/govuk_apps.yml, a
+# Whitehall stack requests about 1.5Gi (core) or 2.2Gi (full) - so this
+# holds roughly 10 full or 16 core Whitehall stacks awake at once.
 apiVersion: v1
 kind: ResourceQuota
 metadata:

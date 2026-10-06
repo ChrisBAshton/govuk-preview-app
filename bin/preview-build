@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Builds an image from your own local checkout of a GOV.UK app - whatever
+# branch it's on, uncommitted changes included - and loads it into the
+# local kind cluster (see bin/kind-up), so it can be previewed without ever
+# being pushed.
+#
+#   bin/preview-build <app> [path to checkout]
+#
+# <app> is any app in config/govuk_apps.yml. The checkout defaults to
+# $GOVUK_ROOT_DIR/<repo> (GOVUK_ROOT_DIR defaults to ~/govuk, as for
+# govuk-docker). Prints the `local:<tag>` value to use as a branch when
+# creating a preview.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+CLUSTER=govuk-preview-app
+# Must match ImageResolver::LOCAL_REPOSITORY.
+REPOSITORY=govuk-preview-local
+
+usage() {
+  echo "Usage: bin/preview-build <app> [path to checkout]" >&2
+  echo "Apps: $(ruby -ryaml -e 'puts YAML.load_file("config/govuk_apps.yml").keys.join(", ")')" >&2
+  exit 1
+}
+
+[ $# -ge 1 ] || usage
+app=$1
+
+# Images are per repo, not per manifest entry - e.g. frontend and
+# draft-frontend share one.
+repo=$(ruby -ryaml -e '
+  app = YAML.load_file("config/govuk_apps.yml")[ARGV[0]] or exit 1
+  puts File.basename(app.fetch("repo_url"), ".git")
+' "$app") || { echo "Unknown app: $app" >&2; usage; }
+
+checkout=${2:-${GOVUK_ROOT_DIR:-$HOME/govuk}/$repo}
+if [ ! -f "$checkout/Dockerfile" ]; then
+  echo "No Dockerfile in $checkout - pass the path to your $repo checkout" >&2
+  exit 1
+fi
+
+if ! kind get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
+  echo "The local kind cluster isn't running - run bin/kind-up first" >&2
+  exit 1
+fi
+
+# <branch>-<short sha>, plus a timestamp if there are uncommitted changes -
+# so each distinct state of the checkout gets its own tag, and an existing
+# preview never silently changes underneath you.
+branch=$(git -C "$checkout" rev-parse --abbrev-ref HEAD)
+sha=$(git -C "$checkout" rev-parse --short=7 HEAD)
+tag="$(echo "$branch" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^[^a-z0-9]+//')-$sha"
+if [ -n "$(git -C "$checkout" status --porcelain)" ]; then
+  tag="$tag-dirty-$(date +%Y%m%d%H%M%S)"
+fi
+tag=${tag:0:128}
+image="$REPOSITORY/$repo:$tag"
+
+echo "Building $image from $checkout ($branch @ $sha)..."
+docker build -t "$image" "$checkout"
+kind load docker-image "$image" --name "$CLUSTER"
+
+cat <<EOF
+
+Built and loaded $image.
+
+To preview it, create a $app preview at
+http://govuk-preview-app.dev.gov.uk:8080/previews/new with this as its branch:
+
+    local:$tag
+EOF

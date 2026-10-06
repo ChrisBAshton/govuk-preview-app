@@ -17,8 +17,20 @@ require "net/http"
 #   pushing enabled, pushes every PR commit tagged with its full SHA. We
 #   take the branch's current head commit and wait for that image to
 #   appear, since a just-pushed branch's build may still be running.
+# - `local:<tag>` - locally only (PREVIEW_APP_LOCAL_IMAGES=true), an image
+#   built from a developer's own working tree by bin/preview-build and
+#   loaded straight into the kind cluster's node - so code that was never
+#   pushed anywhere can be previewed. Nothing is looked up or pulled.
 class ImageResolver
   class ImageError < StandardError; end
+
+  LOCAL_PREFIX = "local:".freeze
+  # Must match bin/preview-build.
+  LOCAL_REPOSITORY = "govuk-preview-local".freeze
+  # A Docker tag: we only ever let a user choose the tag, never the image
+  # name or registry, so a `local:` source can't point at an arbitrary
+  # image.
+  LOCAL_TAG_FORMAT = /\A[a-z0-9][a-z0-9._-]{0,127}\z/
 
   GITHUB_API = "https://api.github.com".freeze
   GHCR = "ghcr.io".freeze
@@ -26,6 +38,22 @@ class ImageResolver
   POLL_INTERVAL = 30
 
   attr_reader :app, :branch
+
+  def self.local?(branch)
+    branch.to_s.start_with?(LOCAL_PREFIX)
+  end
+
+  def self.local_tag(branch)
+    branch.delete_prefix(LOCAL_PREFIX)
+  end
+
+  def self.local_images_enabled?
+    ENV["PREVIEW_APP_LOCAL_IMAGES"] == "true"
+  end
+
+  def self.local_image?(image)
+    image.to_s.start_with?("#{LOCAL_REPOSITORY}/")
+  end
 
   def initialize(app, branch)
     @app = app
@@ -37,6 +65,8 @@ class ImageResolver
   # but on integration it points at the ECR pull-through cache in front of
   # it - the same one every real GOV.UK app's image is pulled through.
   def resolve!
+    return local_image if self.class.local?(branch)
+
     tag = branch == "main" ? latest_release_tag : head_sha
     wait_until_published!(tag)
     "#{registry}/#{image_name}:#{tag}"
@@ -47,6 +77,17 @@ class ImageResolver
   end
 
 private
+
+  # Images are per repo, not per manifest entry - so one local build of
+  # frontend serves both frontend and draft-frontend.
+  def local_image
+    raise ImageError, "Local images are only available in local development" unless self.class.local_images_enabled?
+
+    tag = self.class.local_tag(branch)
+    raise ImageError, "#{tag.inspect} isn't a valid image tag" unless tag.match?(LOCAL_TAG_FORMAT)
+
+    "#{LOCAL_REPOSITORY}/#{image_name}:#{tag}"
+  end
 
   def registry
     ENV.fetch("PREVIEW_APP_IMAGE_REGISTRY", "#{GHCR}/#{GHCR_NAMESPACE}")

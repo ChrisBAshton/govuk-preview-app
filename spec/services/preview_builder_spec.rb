@@ -9,7 +9,7 @@ RSpec.describe PreviewBuilder do
     Hash.new do |hash, preview|
       hash[preview] = instance_double(
         KubernetesRunner, prepare!: nil, start!: "deploy-uid", migrate!: nil, seed!: nil, run_setup_task!: nil, start_worker!: nil,
-                          container_name: "govuk-preview-app-#{preview.slug}"
+                          container_name: "govuk-preview-app-#{preview.slug}", current_image: "existing-image"
       )
     end
   end
@@ -19,10 +19,12 @@ RSpec.describe PreviewBuilder do
       instance_double(ImageResolver, resolve!: "ghcr.io/alphagov/govuk/#{app.name}:#{branch}")
     end
     allow(KubernetesRunner).to receive(:new) { |preview, **| runners[preview] }
+    allow(PreviewCapacity).to receive(:make_room_for!)
+    allow(StackRedis).to receive(:new).and_return(instance_double(StackRedis, start!: nil))
   end
 
   def stub_databases(url = "db-url")
-    allow(KubernetesDatabaseRunner).to receive(:new).and_return(instance_double(KubernetesDatabaseRunner, start!: url))
+    allow(KubernetesDatabaseRunner).to receive(:new).and_return(instance_double(KubernetesDatabaseRunner, start!: url, database_url: url))
   end
 
   def internal_uri(preview)
@@ -30,11 +32,32 @@ RSpec.describe PreviewBuilder do
   end
 
   describe "#build!" do
-    it "does nothing if the preview is already running" do
-      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+    it "does nothing if the preview is already running with the same dependency addresses" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running,
+                                 env_digest: Digest::SHA256.hexdigest({}.to_json))
 
       described_class.new(preview).build!
 
+      expect(ImageResolver).not_to have_received(:new)
+      expect(runners[preview]).not_to have_received(:start!)
+    end
+
+    it "makes room for the whole stack once, up front, from the top-level preview only" do
+      preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
+      stub_databases
+
+      described_class.new(preview).build!
+
+      expect(PreviewCapacity).to have_received(:make_room_for!).once.with(preview, building: true)
+    end
+
+    it "marks the preview failed, saying why, when there's no room for it" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch")
+      allow(PreviewCapacity).to receive(:make_room_for!).and_raise(PreviewCapacity::AtCapacityError, "At capacity: blah")
+
+      described_class.new(preview).build!
+
+      expect(preview.reload).to have_attributes(status: "failed", status_message: "At capacity: blah")
       expect(ImageResolver).not_to have_received(:new)
     end
 
@@ -74,7 +97,7 @@ RSpec.describe PreviewBuilder do
 
     context "with an app that has a database and dependencies of its own (publishing-api -> content-store, draft-content-store)" do
       it "starts a database, migrates with its URL, passes DATABASE_URL and both dependencies' PLEK URIs, and starts the worker" do
-        preview = create(:preview, app_name: "publishing-api", branch: "my-branch")
+        preview = create(:preview, app_name: "publishing-api", branch: "my-branch", full_stack: true)
         stub_databases("postgresql://db/app_preview")
 
         described_class.new(preview).build!
@@ -96,7 +119,7 @@ RSpec.describe PreviewBuilder do
       end
 
       it "marks the preview failed when seeding fails, without starting the worker" do
-        preview = create(:preview, app_name: "publishing-api", branch: "my-branch")
+        preview = create(:preview, app_name: "publishing-api", branch: "my-branch", full_stack: true)
         stub_databases("postgresql://db/app_preview")
         allow(runners[preview]).to receive(:seed!).and_raise(KubernetesRunner::KubernetesError, "boom")
 
@@ -112,7 +135,7 @@ RSpec.describe PreviewBuilder do
       before { stub_databases }
 
       it "builds a dedicated dependent preview, on main, first and injects its PLEK_SERVICE_*_URI into the parent" do
-        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
 
         described_class.new(preview).build!
 
@@ -127,7 +150,7 @@ RSpec.describe PreviewBuilder do
       end
 
       it "builds the dependency's own dependencies too (content-store/draft-content-store, two levels down)" do
-        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
 
         described_class.new(preview).build!
 
@@ -137,7 +160,7 @@ RSpec.describe PreviewBuilder do
       end
 
       it "gives frontend the real local Content Store URI resolved by its sibling publishing-api dependency, not frontend's own real-GOV.UK default" do
-        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
 
         described_class.new(preview).build!
 
@@ -150,7 +173,7 @@ RSpec.describe PreviewBuilder do
       end
 
       it "gives draft-frontend the draft Content Store's address under the same key frontend uses, via env_aliases - not the live one" do
-        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
 
         described_class.new(preview).build!
 
@@ -168,7 +191,7 @@ RSpec.describe PreviewBuilder do
       end
 
       it "gives whitehall the real, browser-reachable public URLs for frontend and draft-frontend, not their internal addresses" do
-        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
 
         described_class.new(preview).build!
 
@@ -184,7 +207,7 @@ RSpec.describe PreviewBuilder do
       end
 
       it "does not inject a _PUBLIC_URL for a dependency that isn't publicly_readable" do
-        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
 
         described_class.new(preview).build!
 
@@ -194,7 +217,7 @@ RSpec.describe PreviewBuilder do
       end
 
       it "marks the parent failed with a distinct message when the dependency fails, without touching the dependency's own message" do
-        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
         allow(ImageResolver).to receive(:new) do |app, branch|
           resolver = instance_double(ImageResolver, resolve!: "ghcr.io/alphagov/govuk/#{app.name}:#{branch}")
           if app.name == "publishing-api"
@@ -216,11 +239,115 @@ RSpec.describe PreviewBuilder do
       end
     end
 
+    context "when resuming a build that was interrupted part-way (e.g. by a worker restart)" do
+      before { stub_databases }
+
+      it "reuses the dependency previews that already exist, rebuilding only those that hadn't finished" do
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
+        publishing_api = create(:preview, app_name: "publishing-api", branch: "main", parent: preview, status: :running)
+        create(:preview, app_name: "content-store", branch: "main", parent: publishing_api, status: :running)
+        create(:preview, app_name: "draft-content-store", branch: "main", parent: publishing_api, status: :running)
+        frontend = create(:preview, app_name: "frontend", branch: "main", parent: preview, status: :starting)
+
+        expect { described_class.new(preview).build! }.to change(Preview, :count).by(1) # just draft-frontend
+
+        # Running ones are never rebuilt (which would reload their databases)
+        # - at most restarted with up-to-date addresses.
+        expect(runners[publishing_api]).not_to have_received(:migrate!)
+        expect(ImageResolver).not_to have_received(:new).with(GovukApps.find("publishing-api"), anything)
+        expect(runners[frontend]).to have_received(:prepare!)
+        expect(preview.reload.status).to eq("running")
+      end
+
+      it "still passes on the addresses resolved by dependencies that were already running" do
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
+        publishing_api = create(:preview, app_name: "publishing-api", branch: "main", parent: preview, status: :running)
+        content_store = create(:preview, app_name: "content-store", branch: "main", parent: publishing_api, status: :running)
+        create(:preview, app_name: "draft-content-store", branch: "main", parent: publishing_api, status: :running)
+
+        described_class.new(preview).build!
+
+        frontend = preview.reload.dependents.find_by!(app_name: "frontend")
+        expect(runners[frontend]).to have_received(:start!).with(
+          extra_env: hash_including("PLEK_SERVICE_CONTENT_STORE_URI" => internal_uri(content_store)),
+        )
+        expect(runners[preview]).to have_received(:start!).with(
+          extra_env: hash_including("PLEK_SERVICE_PUBLISHING_API_URI" => internal_uri(publishing_api)),
+        )
+      end
+    end
+
+    context "with the core stack (the default)" do
+      before { stub_databases("postgresql://db/app_preview") }
+
+      it "leaves out full-stack-only dependencies, at any depth" do
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+
+        described_class.new(preview).build!
+
+        expect(preview.reload.tree.drop(1).map(&:app_name)).to eq(%w[publishing-api])
+        expect(preview.status).to eq("running")
+      end
+
+      it "points the app that would have used a left-out dependency at the sink, without passing that on" do
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+
+        described_class.new(preview).build!
+
+        publishing_api = preview.reload.dependents.find_by!(app_name: "publishing-api")
+        expect(runners[publishing_api]).to have_received(:start!).with(
+          extra_env: hash_including(
+            "PLEK_SERVICE_CONTENT_STORE_URI" => "http://sink",
+            "PLEK_SERVICE_DRAFT_CONTENT_STORE_URI" => "http://sink",
+          ),
+        )
+        expect(runners[preview]).to have_received(:start!).with(
+          extra_env: hash_including("PLEK_SERVICE_FRONTEND_URI" => "http://sink"),
+        )
+        expect(runners[preview]).to have_received(:start!).with(
+          extra_env: hash_excluding("PLEK_SERVICE_CONTENT_STORE_URI"),
+        )
+      end
+    end
+
+    context "when a running preview's dependency addresses have changed (e.g. its stack was resized)" do
+      before { stub_databases("postgresql://db/app_preview") }
+
+      it "restarts it from its current image with the new addresses, without rebuilding it or its database" do
+        preview = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running, env_digest: "stale")
+
+        described_class.new(preview).build!
+
+        expect(KubernetesRunner).to have_received(:new).with(preview, image: "existing-image")
+        expect(runners[preview]).to have_received(:start!).with(extra_env: hash_including("DATABASE_URL" => "postgresql://db/app_preview"))
+        expect(runners[preview]).to have_received(:start_worker!)
+        expect(runners[preview]).not_to have_received(:migrate!)
+        expect(ImageResolver).not_to have_received(:new)
+        expect(preview.reload.env_digest).not_to eq("stale")
+      end
+
+      it "runs its resync tasks once the full stack has been added" do
+        preview = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running, env_digest: "stale", full_stack: true)
+
+        described_class.new(preview).build!
+
+        expect(runners[preview]).to have_received(:run_setup_task!).with("represent_downstream:all", extra_env: anything)
+      end
+
+      it "doesn't when the stack is core" do
+        preview = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running, env_digest: "stale")
+
+        described_class.new(preview).build!
+
+        expect(runners[preview]).not_to have_received(:run_setup_task!)
+      end
+    end
+
     context "with an app that has setup_tasks (whitehall)" do
       before { stub_databases("mysql2://db/app_preview") }
 
       it "runs each configured task, in order, after seeding" do
-        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
 
         described_class.new(preview).build!
 
@@ -230,7 +357,7 @@ RSpec.describe PreviewBuilder do
       end
 
       it "marks the preview failed when a setup task fails, without running later tasks" do
-        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
         allow(runners[preview]).to receive(:run_setup_task!)
           .with("taxonomy:populate_end_to_end_test_data", extra_env: anything)
           .and_raise(KubernetesRunner::KubernetesError, "base_path did not conform to standard")

@@ -10,10 +10,13 @@
     { text: "Branch" },
     { text: "Status" },
     { text: "URL" },
+    { text: "Created at" },
+    { text: "Last visited" },
     { text: "" },
   ],
-  rows: previews_with_depth(@previews).map do |preview, depth|
-    url_cell = if !preview.running?
+  rows: previews_with_dependencies(@previews).map do |preview, dependency|
+    # A sleeping preview keeps its link - visiting it wakes it up.
+    url_cell = if !(preview.running? || preview.sleeping? || preview.waking?)
                  ""
                elsif preview.parent.present? && !preview.publicly_readable?
                  "Internal dependency"
@@ -22,16 +25,22 @@
                end
 
     status_cell = render("govuk_publishing_components/components/tag", text: preview.status)
+    if preview.sleeping? && preview.parent.blank? && preview.status_message.blank?
+      status_cell += tag.p("Wakes up when visited", class: "govuk-body-s govuk-!-margin-bottom-0 govuk-!-margin-top-1")
+    end
     if preview.status_message.present?
       status_cell += tag.p(preview.status_message, class: "govuk-body-s govuk-!-margin-bottom-0 govuk-!-margin-top-1")
     end
 
     [
-      { text: preview_app_name_cell(preview, depth) },
+      { text: preview_app_name_cell(preview, dependency) },
       { text: preview.branch },
       { text: status_cell },
       { text: url_cell },
-      { text: preview.parent.blank? ? button_to("Delete", preview_path(preview), method: :delete, class: "govuk-button govuk-button--warning govuk-!-margin-bottom-0", data: { confirm: "Are you sure?" }) : "" },
+      { text: preview_time(preview.created_at) },
+      # Visits are recorded against the whole stack, i.e. its top-level preview.
+      { text: preview.parent.blank? ? preview_time(preview.last_accessed_at, blank: "Never") : "" },
+      { text: preview.parent.blank? ? preview_actions(preview) : "" },
     ]
   end,
 } %>

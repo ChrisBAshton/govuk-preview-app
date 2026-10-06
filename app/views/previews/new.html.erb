@@ -3,29 +3,51 @@
   <%= render "govuk_publishing_components/components/back_link", href: previews_path %>
 <% end %>
 
-<%= render "govuk_publishing_components/components/heading", text: "New preview", heading_level: 1, margin_bottom: 6 %>
+<div class="govuk-grid-row">
+  <div class="govuk-grid-column-two-thirds">
+    <% if @preview.errors.any? %>
+      <%= render "govuk_publishing_components/components/error_summary", {
+        title: "There is a problem",
+        items: @preview.errors.map { |error| { text: error.full_message, href: "#preview_#{error.attribute}" } },
+      } %>
+    <% end %>
 
-<% if @preview.errors.any? %>
-  <%= render "govuk_publishing_components/components/error_summary", {
-    title: "There is a problem",
-    items: @preview.errors.full_messages.map { |message| { text: message } },
-  } %>
-<% end %>
+    <h1 class="govuk-heading-xl">New preview</h1>
 
-<%= form_with url: previews_path, method: :post do %>
-  <%= render "govuk_publishing_components/components/select", {
-    id: "preview_app_name",
-    name: "preview[app_name]",
-    label: "Application",
-    options: GovukApps.app_names.map { |name| { text: name, value: name, selected: @preview.app_name == name } },
-  } %>
+    <p class="govuk-body">
+      Runs a branch of a GOV.UK application at its own address, alongside a dedicated copy of the services it
+      depends on, each running <code>main</code>. By default that's just its core dependencies (e.g. Publishing
+      API for Whitehall).
+    </p>
 
-  <%= render "govuk_publishing_components/components/input", {
-    id: "preview_branch",
-    name: "preview[branch]",
-    label: { text: "Branch" },
-    value: @preview.branch,
-  } %>
+    <%= form_with url: previews_path, method: :post do %>
+      <%= render "govuk_publishing_components/components/radio", {
+        id: "preview_app_name",
+        name: "preview[app_name]",
+        heading: "Application",
+        heading_size: "s",
+        error_message: @preview.errors[:app_name].first,
+        items: GovukApps.app_names.map { |name|
+          {
+            value: name,
+            text: name,
+            checked: @preview.app_name == name,
+            conditional: (full_stack_checkbox(name, checked: @preview.app_name == name && @preview.full_stack?) if GovukApps.full_stack_option?(name)),
+          }.compact
+        },
+      } %>
 
-  <%= render "govuk_publishing_components/components/button", text: "Create preview" %>
-<% end %>
+      <%= render "govuk_publishing_components/components/input", {
+        id: "preview_branch",
+        name: "preview[branch]",
+        label: { text: "Branch" },
+        heading_size: "s",
+        hint: branch_hint,
+        error_message: @preview.errors[:branch].first,
+        value: @preview.branch,
+      } %>
+
+      <%= render "govuk_publishing_components/components/button", text: "Create preview" %>
+    <% end %>
+  </div>
+</div>

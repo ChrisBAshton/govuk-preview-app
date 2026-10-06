@@ -8,10 +8,10 @@ module GovukApps
   # also only ever pulls from ghcr.io/alphagov/govuk.)
   TRUSTED_GITHUB_ORG = "alphagov".freeze
 
-  Database = Struct.new(:adapter, :image, keyword_init: true)
+  Database = Struct.new(:adapter, :image, :memory, keyword_init: true)
   Definition = Struct.new(
     :name, :repo_url, :port_env_var, :env, :dependencies, :database, :setup_tasks,
-    :worker_command, :publicly_readable, :env_aliases, keyword_init: true
+    :worker_command, :publicly_readable, :env_aliases, :full_stack_dependencies, :resync_tasks, :memory, keyword_init: true
   )
 
   def self.all
@@ -25,6 +25,7 @@ module GovukApps
       database = attrs["database"] && Database.new(
         adapter: attrs["database"].fetch("adapter"),
         image: attrs["database"].fetch("image"),
+        memory: attrs["database"]["memory"],
       )
 
       Definition.new(
@@ -38,6 +39,9 @@ module GovukApps
         worker_command: attrs["worker_command"],
         publicly_readable: attrs.fetch("publicly_readable", false),
         env_aliases: attrs.fetch("env_aliases", {}),
+        full_stack_dependencies: attrs.fetch("full_stack_dependencies", []),
+        resync_tasks: attrs.fetch("resync_tasks", []),
+        memory: attrs["memory"],
       )
     end
   end
@@ -48,6 +52,30 @@ module GovukApps
 
   def self.find(name)
     all.find { |app| app.name == name }
+  end
+
+  # Every app a preview of `name` starts a dependency preview of, at any
+  # depth, in build order - e.g. whitehall's full stack -> publishing-api,
+  # content-store, draft-content-store, frontend, draft-frontend; its core
+  # stack -> just publishing-api. Used to work out how much room a whole
+  # preview stack needs (PreviewCapacity).
+  def self.dependency_tree(name, full_stack: true)
+    app = find(name)
+    return [] unless app
+
+    direct = full_stack ? app.dependencies + app.full_stack_dependencies : app.dependencies
+    direct.flat_map { |dep| [dep, *dependency_tree(dep, full_stack:)] }
+  end
+
+  # Whether a preview of `name` has a full stack worth offering - i.e. one
+  # that runs anything its core stack doesn't.
+  def self.full_stack_option?(name)
+    full_stack_extras(name).any?
+  end
+
+  # What a preview of `name`'s full stack runs on top of its core stack.
+  def self.full_stack_extras(name)
+    dependency_tree(name) - dependency_tree(name, full_stack: false)
   end
 
   # Parses with URI rather than a string prefix/regex match, so a URL

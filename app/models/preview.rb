@@ -6,6 +6,10 @@ class Preview < ApplicationRecord
     waiting_for_image: "waiting_for_image",
     starting: "starting",
     running: "running",
+    # Scaled down to free up room, with everything kept - see
+    # PreviewSleeper. Woken again on the next visit.
+    sleeping: "sleeping",
+    waking: "waking",
     stopping: "stopping",
     failed: "failed",
   }, default: :queued
@@ -19,8 +23,10 @@ class Preview < ApplicationRecord
   validates :app_name, presence: true, inclusion: { in: -> { GovukApps.app_names } }
   validates :branch, presence: true
   validates :slug, presence: true, uniqueness: true
+  validate :branch_is_a_usable_source
 
   before_validation :generate_slug, on: :create
+  before_validation :ignore_full_stack_without_option
   before_validation :generate_public_hostname, on: :create
 
   def self.base_domain
@@ -58,12 +64,52 @@ class Preview < ApplicationRecord
     "#{public_hostname || slug}.#{self.class.base_domain}"
   end
 
+  # The top-level preview this one ultimately exists for (itself, if it has
+  # no parent) - previews are slept, woken and charged for capacity as a
+  # whole stack, via their root.
+  def root
+    parent.present? ? parent.root : self
+  end
+
+  # This preview and every dependency preview beneath it, at any depth.
+  def tree
+    [self, *dependents.flat_map(&:tree)]
+  end
+
+  # Called on every request HostRouter proxies to a preview - but only
+  # writes at most once a minute, since it's only used to decide which
+  # previews have gone unused the longest (see PreviewCapacity).
+  def record_access!
+    return if last_accessed_at.present? && last_accessed_at > 1.minute.ago
+
+    update_column(:last_accessed_at, Time.current)
+  end
+
   def url
     port_suffix = self.class.external_port.presence && ":#{self.class.external_port}"
     "#{self.class.scheme}://#{hostname}#{port_suffix}"
   end
 
 private
+
+  # Only some apps have a full stack that's any different from their core
+  # one (see GovukApps.full_stack_option?) - for the rest, there's nothing
+  # to switch on.
+  def ignore_full_stack_without_option
+    self.full_stack = false if full_stack && !GovukApps.full_stack_option?(app_name)
+  end
+
+  # A `local:<tag>` branch is an image built from a developer's own
+  # checkout (see ImageResolver, bin/preview-build) - only usable locally.
+  def branch_is_a_usable_source
+    return unless ImageResolver.local?(branch)
+
+    if !ImageResolver.local_images_enabled?
+      errors.add(:branch, "can only use a local image in local development")
+    elsif !ImageResolver.local_tag(branch).match?(ImageResolver::LOCAL_TAG_FORMAT)
+      errors.add(:branch, "has an invalid local image tag")
+    end
+  end
 
   def generate_slug
     return if app_name.blank? || branch.blank?

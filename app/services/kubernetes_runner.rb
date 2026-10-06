@@ -30,6 +30,22 @@ class KubernetesRunner
 
   POLL_INTERVAL = 5
 
+  # Kubernetes never gives up on a pod whose image it can't use - it just
+  # waits - so without checking for these, a typo'd or not-yet-loaded
+  # local image would only surface as a timeout many minutes later. These
+  # reasons never fix themselves; a registry pull that's merely slow or
+  # flaky (ErrImagePull, ImagePullBackOff) is still left to retry until
+  # the timeout.
+  UNRECOVERABLE_IMAGE_REASONS = %w[ErrImageNeverPull InvalidImageName].freeze
+
+  CAPACITY_MESSAGE_PREFIX = "Waiting for cluster capacity: ".freeze
+
+  # Apps hardcode their Sidekiq concurrency in config/sidekiq.yml (e.g.
+  # Publishing API's 12) - far more threads, and so database connections
+  # and memory, than a preview needs. Sidekiq's command-line options take
+  # precedence over its config file, so this needs no change in the app.
+  WORKER_CONCURRENCY = 2
+
   attr_reader :preview, :image
 
   def self.api_reachable?
@@ -50,10 +66,39 @@ class KubernetesRunner
     }
   end
 
+  # What each of an app's pods (web, worker and tasks) asks for: its
+  # manifest entry's `memory`, measured with bin/preview-usage - or, for an
+  # app without one, a generous default. Also what PreviewCapacity adds up
+  # to work out how much room a whole preview stack needs.
+  def self.memory_for(app)
+    {
+      request: app.memory&.fetch("request", nil) || ENV.fetch("PREVIEW_APP_POD_MEMORY_REQUEST", "384Mi"),
+      limit: app.memory&.fetch("limit", nil) || ENV.fetch("PREVIEW_APP_POD_MEMORY_LIMIT", "1536Mi"),
+    }
+  end
+
+  # While a pod can't be scheduled (e.g. "0/1 nodes are available: 1
+  # Insufficient memory"), say so on the preview itself - otherwise it just
+  # sits at "starting" with no clue why. Cleared again once it's scheduled.
+  # On integration this is usually brief (the cluster autoscaler adds a
+  # node); locally it means the kind node is full.
+  def self.report_scheduling(preview, pods)
+    unschedulable = pods.flat_map { |pod| pod.dig("status", "conditions").to_a }
+      .find { |c| c["type"] == "PodScheduled" && c["status"] == "False" && c["reason"] == "Unschedulable" }
+
+    if unschedulable
+      preview.update_column(:status_message, "#{CAPACITY_MESSAGE_PREFIX}#{unschedulable['message']}".truncate(255))
+    elsif preview.status_message.to_s.start_with?(CAPACITY_MESSAGE_PREFIX)
+      preview.update_column(:status_message, nil)
+    end
+  end
+
   def self.labels_for(preview, component)
     {
       "app.kubernetes.io/managed-by" => "govuk-preview-app",
       "govuk-preview-app/preview-id" => preview.id.to_s,
+      # Which stack it's part of - see bin/preview-usage.
+      "govuk-preview-app/root-id" => preview.root.id.to_s,
       "govuk-preview-app/app" => preview.app_name,
       "govuk-preview-app/component" => component,
     }
@@ -125,7 +170,7 @@ class KubernetesRunner
         worker_container_name,
         component: "worker",
         env: extra_env,
-        command: GovukApps.find(preview.app_name).worker_command,
+        command: worker_command,
       ),
     )
   end
@@ -154,8 +199,27 @@ class KubernetesRunner
     api.delete(api.path("batch/v1", "jobs"), labelSelector: "govuk-preview-app/preview-id=#{preview.id}")
   end
 
+  # Sleeping (0) and waking (1) a preview - see PreviewSleeper. The
+  # Deployment, Service, ConfigMap and image all stay put, so waking is
+  # just the app booting again: no image pull, nothing re-run.
+  def scale!(replicas)
+    deployment_names.each do |name|
+      api.merge_patch(api.path("apps/v1", "deployments", name), { spec: { replicas: replicas } })
+    end
+  end
+
+  def wait_until_running!
+    deployment_names.each { |name| wait_until_available!(name) }
+  end
+
   def exists?
     api.exists?(api.path("apps/v1", "deployments", container_name))
+  end
+
+  # The image a running preview was started from - so it can be restarted
+  # with different settings without resolving its image again.
+  def current_image
+    api.get(api.path("apps/v1", "deployments", container_name)).dig("spec", "template", "spec", "containers", 0, "image")
   end
 
   def running?
@@ -176,6 +240,20 @@ private
 
   def overrides_name
     ContainerName.for(preview.slug, suffix: "-overrides")
+  end
+
+  def worker_command
+    command = GovukApps.find(preview.app_name).worker_command
+    command.include?("sidekiq") ? [*command, "-c", WORKER_CONCURRENCY.to_s] : command
+  end
+
+  def memory
+    self.class.memory_for(GovukApps.find(preview.app_name))
+  end
+
+  def deployment_names
+    worker = GovukApps.find(preview.app_name).worker_command
+    worker ? [container_name, worker_container_name] : [container_name]
   end
 
   def labels(component)
@@ -219,14 +297,16 @@ private
     container = {
       name: "app",
       image: image,
-      imagePullPolicy: "IfNotPresent",
-      env: PreviewEnv.for(preview, env).map { |key, value| { name: key, value: value } },
+      # A local image (see ImageResolver) only exists on the kind node it
+      # was loaded onto - there's nowhere to pull it from.
+      imagePullPolicy: ImageResolver.local_image?(image) ? "Never" : "IfNotPresent",
+      env: PreviewEnv.for(preview, env, web:).map { |key, value| { name: key, value: value } },
       resources: {
         requests: {
           cpu: ENV.fetch("PREVIEW_APP_POD_CPU_REQUEST", "50m"),
-          memory: ENV.fetch("PREVIEW_APP_POD_MEMORY_REQUEST", "384Mi"),
+          memory: memory[:request],
         },
-        limits: { memory: ENV.fetch("PREVIEW_APP_POD_MEMORY_LIMIT", "1536Mi") },
+        limits: { memory: memory[:limit] },
       },
       securityContext: self.class.container_security_context,
       volumeMounts: [{ name: "overrides", mountPath: OVERRIDES_PATH, subPath: OVERRIDES_KEY, readOnly: true }],
@@ -290,16 +370,24 @@ private
 
       failed = status["failed"].to_i.positive? ||
         Array(status["conditions"]).any? { |c| c["type"] == "Failed" && c["status"] == "True" }
-      raise KubernetesError, "#{command.join(' ')} failed: #{job_logs(name)}" if failed
+      raise KubernetesError, "#{command.join(' ')} failed: #{job_failure(name, status)}" if failed
       raise KubernetesError, "#{command.join(' ')} did not finish within #{task_timeout}s" if Time.current > deadline
+
+      inspect_pods!("job-name=#{name}")
 
       pause
     end
   end
 
-  def job_logs(name)
+  # The task's own output if it got as far as running - otherwise (e.g. it
+  # hit its deadline while never scheduled, and Kubernetes has deleted its
+  # pod) whatever Kubernetes says about why the Job failed.
+  def job_failure(name, status)
     pod = api.get(api.path("v1", "pods"), labelSelector: "job-name=#{name}").fetch("items", []).first
-    return "(no pod found)" unless pod
+    if pod.nil?
+      condition = Array(status["conditions"]).find { |c| c["type"] == "Failed" }
+      return condition&.fetch("message", nil).presence || "it never started"
+    end
 
     PreviewEnv.relevant_error(
       api.get_text(api.path("v1", "pods", pod.dig("metadata", "name"), "log"), tailLines: 100),
@@ -314,13 +402,50 @@ private
     false
   end
 
+  # Whether the Deployment's latest version is fully rolled out - the same
+  # test as `kubectl rollout status`. Merely having an available pod isn't
+  # enough: straight after a Deployment is re-applied (e.g. restarted with
+  # new dependency addresses), the *old* pod still counts as available
+  # until Kubernetes replaces it, so callers would carry on - and e.g. run
+  # a resync task - before the new settings are actually in use.
+  def rolled_out?(name)
+    deployment = api.get(api.path("apps/v1", "deployments", name))
+    replicas = deployment.dig("spec", "replicas") || 1
+    status = deployment.fetch("status", {})
+
+    status["observedGeneration"].to_i >= deployment.dig("metadata", "generation").to_i &&
+      %w[replicas updatedReplicas availableReplicas].all? { |field| status[field].to_i == replicas }
+  rescue KubernetesApi::NotFound
+    false
+  end
+
   def wait_until_available!(name)
     deadline = Time.current + start_timeout
 
-    until available?(name)
+    until rolled_out?(name)
       raise KubernetesError, "#{name} did not become ready within #{start_timeout}s" if Time.current > deadline
 
+      inspect_pods!("app.kubernetes.io/instance=#{name}")
+
       pause
+    end
+  end
+
+  # Checks on pods that aren't ready yet: fails fast if one can never get
+  # its image, and keeps the preview's status message honest if one is
+  # waiting for room in the cluster.
+  def inspect_pods!(label_selector)
+    pods = api.get(api.path("v1", "pods"), labelSelector: label_selector).fetch("items", [])
+    self.class.report_scheduling(preview, pods)
+
+    pods.each do |pod|
+      pod.dig("status", "containerStatuses").to_a.each do |container|
+        reason = container.dig("state", "waiting", "reason")
+        next unless UNRECOVERABLE_IMAGE_REASONS.include?(reason)
+
+        hint = ImageResolver.local_image?(container["image"]) ? " - has it been built and loaded with bin/preview-build?" : ""
+        raise KubernetesError, "Can't use image #{container['image']} (#{reason})#{hint}"
+      end
     end
   end
 

@@ -1,6 +1,10 @@
 require "rails_helper"
 
 RSpec.describe PreviewDestroyer do
+  let(:stack_redis) { instance_double(StackRedis, stop!: nil) }
+
+  before { allow(StackRedis).to receive(:new).and_return(stack_redis) }
+
   describe "#destroy!" do
     it "deletes the preview's Kubernetes objects and destroys the record" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch")

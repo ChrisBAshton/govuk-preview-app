@@ -17,8 +17,12 @@
 # - some apps' database.yml has a production block that doesn't reference
 #   DATABASE_URL at all (e.g. Whitehall - unlike development/test, which
 #   do), so the env var is silently ignored under RAILS_ENV=production.
-#   Overriding the connection directly sidesteps whatever database.yml
-#   said.
+#   So the connection is re-established from DATABASE_URL - but on top of
+#   everything else the app's own production config says, minus only its
+#   connection details. Those other settings matter: e.g. Whitehall's
+#   `variables: { sql_mode: TRADITIONAL }` turns off MySQL 8's default
+#   ONLY_FULL_GROUP_BY, which some of its queries rely on, and sets its
+#   encoding to utf8mb4.
 # - some apps' own production.rb sets config.hosts to a real GOV.UK-only
 #   allowlist (e.g. Whitehall), so ActionDispatch::HostAuthorization blocks
 #   every preview subdomain with a 403 - clearing it removes that check
@@ -65,7 +69,12 @@ class ConfigOverrides
   def self.content
     <<~RUBY
       Rails.application.config.action_dispatch.x_sendfile_header = nil
-      ActiveRecord::Base.establish_connection(ENV["DATABASE_URL"]) if ENV["DATABASE_URL"]
+      if ENV["DATABASE_URL"]
+        app_config = ActiveRecord::Base.configurations.configs_for(env_name: Rails.env).first&.configuration_hash || {}
+        ActiveRecord::Base.establish_connection(
+          app_config.except(:url, :database, :username, :password, :host, :port, :socket).merge(url: ENV["DATABASE_URL"]),
+        )
+      end
       Rails.application.config.hosts.clear
 
       Rails.application.config.to_prepare do

@@ -42,7 +42,29 @@ RSpec.describe "Previews" do
       expect(response.body).to include("Internal dependency")
     end
 
-    it "nests each dependent directly beneath the app it belongs to, however deep the chain" do
+    it "lists the most recently visited previews first, with never-visited ones last, newest first" do
+      never_older = create(:preview, app_name: "frontend", branch: "never-older", created_at: 2.days.ago)
+      never_newer = create(:preview, app_name: "frontend", branch: "never-newer", created_at: 1.day.ago)
+      visited_long_ago = create(:preview, app_name: "frontend", branch: "visited-long-ago", last_accessed_at: 3.hours.ago)
+      visited_recently = create(:preview, app_name: "frontend", branch: "visited-recently", last_accessed_at: 5.minutes.ago)
+
+      get previews_path
+
+      branches = Capybara::Node::Simple.new(response.body).all("table tbody tr").map { |row| row.all("td")[1].text }
+      expect(branches).to eq([visited_recently, visited_long_ago, never_newer, never_older].map(&:branch))
+    end
+
+    it "shows when each preview was created, and when its stack was last visited" do
+      create(:preview, app_name: "frontend", branch: "visited", created_at: 2.hours.ago, last_accessed_at: 5.minutes.ago)
+      create(:preview, app_name: "frontend", branch: "unvisited")
+
+      get previews_path
+
+      cells = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, row.all("td")[4..5].map(&:text)] }
+      expect(cells).to eq("visited" => ["about 2 hours ago", "5 minutes ago"], "unvisited" => ["less than a minute ago", "Never"])
+    end
+
+    it "lists every dependency beneath the app its stack belongs to, however deep the chain" do
       # Created first, so it's the *older* top-level preview - the
       # controller orders top-level previews newest-first, so this must
       # still end up listed after the whole whitehall chain below.
@@ -70,6 +92,27 @@ RSpec.describe "Previews" do
 
       expect(response).to have_http_status(:ok)
     end
+
+    it "offers the applications as radio buttons, revealing a full stack box only for apps that have one" do
+      get new_preview_path
+
+      page = Capybara::Node::Simple.new(response.body)
+      expect(page.all("input[type=radio][name='preview[app_name]']").map(&:value)).to eq(GovukApps.app_names)
+      expect(page.all("input[type=checkbox]").map { |box| box[:name] }).to contain_exactly(
+        "preview[full_stack_for][whitehall]", "preview[full_stack_for][publishing-api]"
+      )
+      expect(page.find("#preview_full_stack_whitehall").text).to include("content-store, draft-content-store, frontend, and draft-frontend")
+      expect(page.find("#preview_full_stack_publishing_api").text).not_to include("frontend")
+    end
+
+    it "only mentions local images when they're enabled" do
+      get new_preview_path
+      expect(response.body).not_to include("bin/preview-build")
+
+      enable_local_images
+      get new_preview_path
+      expect(response.body).to include("bin/preview-build")
+    end
   end
 
   describe "POST /previews" do
@@ -88,6 +131,79 @@ RSpec.describe "Previews" do
       }.not_to change(Preview, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
+    end
+  end
+
+  describe "POST /previews/:id/sleep, /wake and /retry" do
+    it "queues putting a running preview to sleep" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+
+      expect { post sleep_preview_path(preview) }.to change(PreviewsSleepJob.jobs, :size).by(1)
+      expect(response).to redirect_to(previews_path)
+    end
+
+    it "queues waking a sleeping preview" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :sleeping)
+
+      expect { post wake_preview_path(preview) }.to change(PreviewsWakeJob.jobs, :size).by(1)
+      expect(preview.reload.status).to eq("waking")
+    end
+
+    it "retries a failed preview's build from where it stopped" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :failed, status_message: "boom")
+
+      expect { post retry_preview_path(preview) }.to change(PreviewsCreateJob.jobs, :size).by(1)
+      expect(preview.reload).to have_attributes(status: "queued", status_message: nil)
+    end
+
+    it "queues adding or removing the full stack for a running preview" do
+      preview = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running)
+
+      post resize_preview_path(preview, full_stack: true)
+
+      expect(PreviewsResizeJob.jobs.last["args"].first(2)).to eq([preview.id, true])
+    end
+
+    it "creates a core stack unless the chosen app's full stack box is ticked" do
+      post previews_path, params: { preview: { app_name: "whitehall", branch: "core-branch" } }
+      post previews_path, params: { preview: { app_name: "whitehall", branch: "full-branch", full_stack_for: { "whitehall" => "true" } } }
+      # Ticked under Whitehall, then Publishing API chosen instead - the
+      # (now hidden) Whitehall box doesn't count.
+      post previews_path, params: { preview: { app_name: "publishing-api", branch: "switched", full_stack_for: { "whitehall" => "true" } } }
+
+      expect(Preview.find_by(branch: "core-branch").full_stack).to be(false)
+      expect(Preview.find_by(branch: "full-branch").full_stack).to be(true)
+      expect(Preview.find_by(branch: "switched").full_stack).to be(false)
+    end
+
+    it "offers adding or removing the full stack only for running apps that have one" do
+      create(:preview, app_name: "whitehall", branch: "core-one", status: :running)
+      create(:preview, app_name: "whitehall", branch: "full-one", status: :running, full_stack: true)
+      create(:preview, app_name: "frontend", branch: "no-extras", status: :running)
+
+      get previews_path
+
+      rows = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, row.all("button").map(&:text)] }
+      expect(rows).to eq(
+        "core-one" => ["Sleep", "Add full stack", "Delete"],
+        "full-one" => ["Sleep", "Remove full stack", "Delete"],
+        "no-extras" => %w[Sleep Delete],
+      )
+    end
+
+    it "offers only the buttons that apply to each preview" do
+      create(:preview, app_name: "frontend", branch: "running-one", status: :running)
+      create(:preview, app_name: "frontend", branch: "sleeping-one", status: :sleeping)
+      create(:preview, app_name: "frontend", branch: "failed-one", status: :failed)
+
+      get previews_path
+
+      rows = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, row.all("button").map(&:text)] }
+      expect(rows).to eq(
+        "running-one" => %w[Sleep Delete],
+        "sleeping-one" => %w[Wake Delete],
+        "failed-one" => %w[Retry Delete],
+      )
     end
   end
 

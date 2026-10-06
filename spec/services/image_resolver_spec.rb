@@ -59,4 +59,29 @@ RSpec.describe ImageResolver do
 
     expect { resolver_for("no-such-branch").resolve! }.to raise_error(described_class::ImageError, /Couldn't find "no-such-branch"/)
   end
+
+  describe "local: sources" do
+    it "resolves to the locally-loaded image, without asking GitHub or GHCR" do
+      enable_local_images
+
+      expect(resolver_for("local:my-branch-abc1234").resolve!).to eq("govuk-preview-local/whitehall:my-branch-abc1234")
+      expect(WebMock).not_to have_requested(:any, /github|ghcr/)
+    end
+
+    it "uses the repo's image for a manifest entry sharing it (draft-frontend -> frontend)" do
+      enable_local_images
+
+      expect(described_class.new(GovukApps.find("draft-frontend"), "local:x").resolve!).to eq("govuk-preview-local/frontend:x")
+    end
+
+    it "refuses local images unless enabled" do
+      expect { resolver_for("local:my-branch").resolve! }.to raise_error(described_class::ImageError, /only available in local development/)
+    end
+
+    it "refuses a tag that could smuggle in another image" do
+      enable_local_images
+
+      expect { resolver_for("local:ghcr.io/evil/image").resolve! }.to raise_error(described_class::ImageError, /isn't a valid image tag/)
+    end
+  end
 end
