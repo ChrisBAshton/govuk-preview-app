@@ -12,7 +12,7 @@ RSpec.describe GovukApps do
     it "includes frontend, publishing-api, whitehall, and their draft-stack counterparts" do
       expect(described_class.app_names).to include(
         "frontend", "draft-frontend", "content-store", "draft-content-store", "publishing-api", "whitehall",
-        "govuk-publishing-components"
+        "govuk-publishing-components", "govuk-content-publishing-guidance"
       )
     end
   end
@@ -88,6 +88,14 @@ RSpec.describe GovukApps do
         "RAILS_ENV" => "development",
         "RACK_ENV" => "development",
       )
+    end
+
+    it "parses govuk-content-publishing-guidance, a plain app with no extra env" do
+      definition = described_class.find("govuk-content-publishing-guidance")
+
+      expect(definition.repo_url).to eq("https://github.com/alphagov/govuk-content-publishing-guidance.git")
+      expect(definition.port_env_var).to eq("PORT")
+      expect(definition.env).to eq({})
     end
 
     it "returns nil for an unknown app" do

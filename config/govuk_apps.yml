@@ -163,3 +163,7 @@ govuk-publishing-components:
     # LoadError (sassc)/missing-manifest errors instead).
     RAILS_ENV: development
     RACK_ENV: development
+
+govuk-content-publishing-guidance:
+  repo_url: https://github.com/alphagov/govuk-content-publishing-guidance.git
+  port_env_var: PORT
