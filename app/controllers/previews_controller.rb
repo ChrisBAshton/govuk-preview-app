@@ -22,6 +22,13 @@ class PreviewsController < ApplicationController
     end
   end
 
+  # Deleting a preview asks first, on a page of its own - like Whitehall's
+  # admin, and unlike a JavaScript confirm, which this app has nothing to
+  # handle.
+  def confirm_destroy
+    @preview = Preview.find(params[:id])
+  end
+
   def destroy
     preview = Preview.find(params[:id])
     preview.update!(status: :stopping)

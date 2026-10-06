@@ -37,10 +37,6 @@ module PreviewsHelper
   end
 
   # What the branch field accepts - see ImageResolver.
-  def preview_action(text, path, modifier, method: :post, **options)
-    button_to(text, path, method:, class: "govuk-button #{modifier} govuk-!-margin-bottom-0", form_class: "govuk-!-display-inline-block", **options)
-  end
-
   def branch_hint
     sources = [
       safe_join([tag.code("main"), " - the app's latest release"]),
@@ -53,19 +49,38 @@ module PreviewsHelper
     tag.ul(safe_join(sources.map { |source| tag.li(source) }), class: "govuk-list govuk-list--bullet")
   end
 
-  # Buttons for a top-level preview (dependencies go wherever it goes).
+  # A top-level preview's actions (its dependencies go wherever it goes),
+  # as links separated by pipes - like Whitehall's admin tables. Each says
+  # which preview it's for to screen readers, as Whitehall's do.
   def preview_actions(preview)
-    buttons = []
-    buttons << preview_action("Sleep", sleep_preview_path(preview), "govuk-button--secondary") if preview.running?
+    actions = []
+    actions << preview_post_link("Sleep", sleep_preview_path(preview), preview) if preview.running?
     if preview.running? && preview.status_message.blank? && GovukApps.full_stack_option?(preview.app_name)
       label = preview.full_stack? ? "Remove full stack" : "Add full stack"
-      buttons << preview_action(label, resize_preview_path(preview, full_stack: !preview.full_stack?), "govuk-button--secondary")
+      actions << preview_post_link(label, resize_preview_path(preview, full_stack: !preview.full_stack?), preview)
     end
-    buttons << preview_action("Wake", wake_preview_path(preview), "govuk-button--secondary") if preview.sleeping?
-    buttons << preview_action("Retry", retry_preview_path(preview), "govuk-button--secondary") if preview.failed?
-    buttons << preview_action("Delete", preview_path(preview), "govuk-button--warning", method: :delete, data: { confirm: "Are you sure?" })
+    actions << preview_post_link("Wake", wake_preview_path(preview), preview) if preview.sleeping?
+    actions << preview_post_link("Retry", retry_preview_path(preview), preview) if preview.failed?
+    # Deleting asks first, on a page of its own - see #confirm_destroy.
+    actions << link_to(
+      safe_join(["Delete", preview_action_context(preview)]),
+      confirm_destroy_preview_path(preview),
+      class: "govuk-link gem-link--destructive",
+    )
 
-    tag.div(safe_join(buttons), class: "govuk-button-group govuk-!-margin-bottom-0")
+    tag.div(safe_join(actions, tag.span("|", class: "app-actions__separator", "aria-hidden": "true")), class: "app-actions")
+  end
+
+  # These actions change things, so they POST - from a form whose button
+  # is styled exactly like a link (see application.scss).
+  def preview_post_link(text, path, preview)
+    button_to(path, method: :post, class: "govuk-link app-link-button", form_class: "app-link-button__form") do
+      safe_join([text, preview_action_context(preview)])
+    end
+  end
+
+  def preview_action_context(preview)
+    tag.span(" #{preview.app_name} (#{preview.branch})", class: "govuk-visually-hidden")
   end
 
   # "5 minutes ago", with the exact time on hover.

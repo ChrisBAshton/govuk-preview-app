@@ -3,6 +3,12 @@ require "rails_helper"
 RSpec.describe "Previews" do
   let(:user) { create(:user) }
 
+  # Each row's action links/buttons, without the visually hidden text that
+  # says which preview each is for.
+  def preview_actions_in(row)
+    row.all(".app-actions a, .app-actions button").map { |action| action.text.sub(/ [\w-]+ \([^)]*\)\z/, "") }
+  end
+
   before { login_as(user) }
 
   describe "GET /previews" do
@@ -183,7 +189,7 @@ RSpec.describe "Previews" do
 
       get previews_path
 
-      rows = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, row.all("button").map(&:text)] }
+      rows = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, preview_actions_in(row)] }
       expect(rows).to eq(
         "core-one" => ["Sleep", "Add full stack", "Delete"],
         "full-one" => ["Sleep", "Remove full stack", "Delete"],
@@ -198,12 +204,40 @@ RSpec.describe "Previews" do
 
       get previews_path
 
-      rows = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, row.all("button").map(&:text)] }
+      rows = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, preview_actions_in(row)] }
       expect(rows).to eq(
         "running-one" => %w[Sleep Delete],
         "sleeping-one" => %w[Wake Delete],
         "failed-one" => %w[Retry Delete],
       )
+    end
+  end
+
+  describe "GET /previews/:id/confirm_destroy" do
+    it "asks before deleting, listing what will go with it" do
+      preview = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running)
+      create(:preview, app_name: "publishing-api", branch: "main", parent: preview, status: :running)
+
+      get confirm_destroy_preview_path(preview)
+
+      page = Capybara::Node::Simple.new(response.body)
+      expect(page).to have_css("h1", text: "Delete preview of whitehall (my-branch)?")
+      expect(page).to have_css("li", text: "publishing-api (main)")
+      expect(page).to have_css("form[action='#{preview_path(preview)}'] input[name='_method'][value='delete']", visible: :all)
+      expect(page).to have_button("Delete preview")
+    end
+  end
+
+  describe "the previews page's row actions" do
+    it "are links separated by pipes, with Delete going to a confirmation page and saying which preview each is for" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+
+      get previews_path
+
+      actions = Capybara::Node::Simple.new(response.body).find(".app-actions")
+      expect(actions).to have_css("button.govuk-link", text: "Sleep frontend (my-branch)")
+      expect(actions).to have_css("a.govuk-link.gem-link--destructive[href='#{confirm_destroy_preview_path(preview)}']", text: "Delete frontend (my-branch)")
+      expect(actions).to have_css(".app-actions__separator[aria-hidden='true']", text: "|")
     end
   end
 

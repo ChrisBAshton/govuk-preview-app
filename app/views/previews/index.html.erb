@@ -21,7 +21,7 @@
                elsif preview.parent.present? && !preview.publicly_readable?
                  "Internal dependency"
                else
-                 link_to(preview.hostname, preview.url)
+                 link_to(preview.hostname, preview.url, class: "govuk-link")
                end
 
     status_cell = render("govuk_publishing_components/components/tag", text: preview.status)
