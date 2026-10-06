@@ -193,3 +193,75 @@ whitehall:
     # any browser, meaning sessions (and CSRF token verification) silently
     # never persist across requests. Any truthy value works.
     DISABLE_SECURE_COOKIES: "1"
+
+# The apps below previously only got a Heroku review app (see
+# docs.publishing.service.gov.uk/manual/review-apps.html) - plain,
+# dependency-free previews, same pattern as frontend above. None of these
+# publish a per-branch image to GHCR yet (govuk_publishing_components and
+# govuk-content-publishing-guidance don't even have a Dockerfile/CI image at
+# all - see each one's own comment below), so a preview of any of them sits
+# in waiting_for_image until either that's fixed, or it's previewed from a
+# local checkout via bin/preview-build.
+
+# Named with hyphens, not the repo's own underscores - Kubernetes object
+# names (ConfigMaps, Services, etc.) can't contain underscores, and every
+# other manifest key already uses hyphens; the manifest key is just a
+# lookup string, decoupled from repo_url.
+govuk-publishing-components:
+  repo_url: https://github.com/alphagov/govuk_publishing_components.git
+  port_env_var: PORT
+  env:
+    GOVUK_WEBSITE_ROOT: https://www.gov.uk
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+    PLEK_SERVICE_RUMMAGER_URI: https://www.gov.uk/api
+    # Not in app.json - only in its Procfile. Without this, spec/dummy boots
+    # but serves its own default behaviour instead of the actual component
+    # guide UI.
+    MAIN_COMPONENT_GUIDE: "true"
+    # spec/dummy isn't a deployed app with its own asset:precompile step -
+    # on Heroku that happens automatically as part of the buildpack's slug
+    # compile. Locally (bin/preview-build) there's no such step, so it has
+    # to serve assets live via Sprockets, which only happens outside
+    # RAILS_ENV=production (confirmed directly: production raises
+    # LoadError (sassc)/missing-manifest errors instead).
+    RAILS_ENV: development
+    RACK_ENV: development
+
+govuk-content-publishing-guidance:
+  repo_url: https://github.com/alphagov/govuk-content-publishing-guidance.git
+  port_env_var: PORT
+
+collections:
+  repo_url: https://github.com/alphagov/collections.git
+  port_env_var: PORT
+  env:
+    GOVUK_APP_DOMAIN: www.gov.uk
+    GOVUK_WEBSITE_ROOT: https://www.gov.uk
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+    PLEK_SERVICE_SEARCH_API_URI: https://www.gov.uk/api
+
+feedback:
+  repo_url: https://github.com/alphagov/feedback.git
+  port_env_var: PORT
+  env:
+    GOVUK_APP_DOMAIN: www.gov.uk
+    GOVUK_WEBSITE_ROOT: https://www.gov.uk
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+
+finder-frontend:
+  repo_url: https://github.com/alphagov/finder-frontend.git
+  port_env_var: PORT
+  env:
+    GOVUK_APP_DOMAIN: www.gov.uk
+    GOVUK_WEBSITE_ROOT: https://www.gov.uk
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+    PLEK_SERVICE_SEARCH_API_URI: https://www.gov.uk/api
+    PLEK_SERVICE_WHITEHALL_FRONTEND_URI: https://www.gov.uk
+
+smart-answers:
+  repo_url: https://github.com/alphagov/smart-answers.git
+  port_env_var: PORT
+  env:
+    GOVUK_APP_DOMAIN: www.gov.uk
+    GOVUK_WEBSITE_ROOT: https://www.gov.uk
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api

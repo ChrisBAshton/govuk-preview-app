@@ -11,7 +11,9 @@ RSpec.describe GovukApps do
   describe ".app_names" do
     it "includes frontend, publishing-api, whitehall, and their draft-stack counterparts" do
       expect(described_class.app_names).to include(
-        "frontend", "draft-frontend", "content-store", "draft-content-store", "publishing-api", "whitehall"
+        "frontend", "draft-frontend", "content-store", "draft-content-store", "publishing-api", "whitehall",
+        "govuk-publishing-components", "govuk-content-publishing-guidance",
+        "collections", "feedback", "finder-frontend", "smart-answers"
       )
     end
   end
@@ -73,6 +75,76 @@ RSpec.describe GovukApps do
     it "parses declared env_aliases" do
       expect(described_class.find("draft-frontend").env_aliases).to eq(
         "PLEK_SERVICE_CONTENT_STORE_URI" => "PLEK_SERVICE_DRAFT_CONTENT_STORE_URI",
+      )
+    end
+
+    it "parses govuk-publishing-components, including its Procfile-only MAIN_COMPONENT_GUIDE flag" do
+      definition = described_class.find("govuk-publishing-components")
+
+      expect(definition.repo_url).to eq("https://github.com/alphagov/govuk_publishing_components.git")
+      expect(definition.port_env_var).to eq("PORT")
+      expect(definition.env).to eq(
+        "GOVUK_WEBSITE_ROOT" => "https://www.gov.uk",
+        "PLEK_SERVICE_CONTENT_STORE_URI" => "https://www.gov.uk/api",
+        "PLEK_SERVICE_RUMMAGER_URI" => "https://www.gov.uk/api",
+        "MAIN_COMPONENT_GUIDE" => "true",
+        "RAILS_ENV" => "development",
+        "RACK_ENV" => "development",
+      )
+    end
+
+    it "parses govuk-content-publishing-guidance, a plain app with no extra env" do
+      definition = described_class.find("govuk-content-publishing-guidance")
+
+      expect(definition.repo_url).to eq("https://github.com/alphagov/govuk-content-publishing-guidance.git")
+      expect(definition.port_env_var).to eq("PORT")
+      expect(definition.env).to eq({})
+    end
+
+    it "parses collections" do
+      definition = described_class.find("collections")
+
+      expect(definition.repo_url).to eq("https://github.com/alphagov/collections.git")
+      expect(definition.env).to eq(
+        "GOVUK_APP_DOMAIN" => "www.gov.uk",
+        "GOVUK_WEBSITE_ROOT" => "https://www.gov.uk",
+        "PLEK_SERVICE_CONTENT_STORE_URI" => "https://www.gov.uk/api",
+        "PLEK_SERVICE_SEARCH_API_URI" => "https://www.gov.uk/api",
+      )
+    end
+
+    it "parses feedback" do
+      definition = described_class.find("feedback")
+
+      expect(definition.repo_url).to eq("https://github.com/alphagov/feedback.git")
+      expect(definition.env).to eq(
+        "GOVUK_APP_DOMAIN" => "www.gov.uk",
+        "GOVUK_WEBSITE_ROOT" => "https://www.gov.uk",
+        "PLEK_SERVICE_CONTENT_STORE_URI" => "https://www.gov.uk/api",
+      )
+    end
+
+    it "parses finder-frontend" do
+      definition = described_class.find("finder-frontend")
+
+      expect(definition.repo_url).to eq("https://github.com/alphagov/finder-frontend.git")
+      expect(definition.env).to eq(
+        "GOVUK_APP_DOMAIN" => "www.gov.uk",
+        "GOVUK_WEBSITE_ROOT" => "https://www.gov.uk",
+        "PLEK_SERVICE_CONTENT_STORE_URI" => "https://www.gov.uk/api",
+        "PLEK_SERVICE_SEARCH_API_URI" => "https://www.gov.uk/api",
+        "PLEK_SERVICE_WHITEHALL_FRONTEND_URI" => "https://www.gov.uk",
+      )
+    end
+
+    it "parses smart-answers" do
+      definition = described_class.find("smart-answers")
+
+      expect(definition.repo_url).to eq("https://github.com/alphagov/smart-answers.git")
+      expect(definition.env).to eq(
+        "GOVUK_APP_DOMAIN" => "www.gov.uk",
+        "GOVUK_WEBSITE_ROOT" => "https://www.gov.uk",
+        "PLEK_SERVICE_CONTENT_STORE_URI" => "https://www.gov.uk/api",
       )
     end
 
