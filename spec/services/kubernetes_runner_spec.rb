@@ -87,6 +87,8 @@ RSpec.describe KubernetesRunner do
         "subPath" => "zzz_preview_app_overrides.rb",
       )
       expect(env_hash(container)).to include(
+        "WEB_CONCURRENCY" => "0",
+        "RAILS_MAX_THREADS" => "3",
         "PORT" => "3000",
         "REDIS_URL" => "redis://redis:6379",
         "PLEK_SERVICE_CONTENT_STORE_URI" => "http://cs",
@@ -152,15 +154,16 @@ RSpec.describe KubernetesRunner do
   end
 
   describe "#start_worker!" do
-    it "applies a second Deployment running the manifest's worker_command, with no Service" do
+    it "applies a second Deployment running the manifest's worker_command at a preview-sized concurrency, with no Service" do
       apply_stub("apps/v1", "deployments", runner.worker_container_name)
 
       runner.start_worker!
 
       deployment = applied_body("apps/v1", "deployments", runner.worker_container_name)
       container = deployment.dig("spec", "template", "spec", "containers", 0)
-      expect(container["command"]).to eq(["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"])
+      expect(container["command"]).to eq(["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml", "-c", "2"])
       expect(container).not_to have_key("readinessProbe")
+      expect(env_hash(container)).not_to include("WEB_CONCURRENCY", "RAILS_MAX_THREADS")
     end
   end
 
@@ -183,6 +186,7 @@ RSpec.describe KubernetesRunner do
       expect(job.dig("spec", "template", "spec", "restartPolicy")).to eq("Never")
       expect(container["command"]).to eq(%w[bin/rails db:create db:schema:load])
       expect(env_hash(container)["DATABASE_URL"]).to eq("postgresql://postgres@db/app_preview")
+      expect(env_hash(container)).not_to include("WEB_CONCURRENCY")
       expect(job.dig("metadata", "name")).to start_with("govuk-preview-app-")
       expect(job.dig("metadata", "name").length).to be <= 63
     end

@@ -25,13 +25,22 @@ require "securerandom"
 # filter, Whitehall.integration_or_staging?) - previews are integration-
 # like environments, so this makes that recognised rather than silently
 # blocked under RAILS_ENV=production.
+# WEB_CONCURRENCY/RAILS_MAX_THREADS (web pods only): every previewed app
+# configures Puma through govuk_app_config's GovukPuma, which by default
+# forks 2 worker processes - a full extra copy of the app each - with 5
+# threads apiece. A preview serves a handful of people, so one process (0
+# means Puma's single mode, no forking) with a few threads is plenty, for
+# a fraction of the memory. Not set for worker/task pods: Sidekiq sizes its
+# database pool from RAILS_MAX_THREADS too (see KubernetesRunner).
 # Beyond these, each app's manifest entry can declare a fixed set of extra
 # env vars (e.g. pointing an app's Plek-resolved dependencies at real
 # GOV.UK services), and `extra_env` carries per-instance values resolved
 # at build time (a dependency's own PLEK_SERVICE_*_URI, DATABASE_URL) that
 # can't live in the static manifest - see config/govuk_apps.yml.
 module PreviewEnv
-  def self.for(preview, extra_env = {})
+  WEB_SERVER_ENV = { "WEB_CONCURRENCY" => "0", "RAILS_MAX_THREADS" => "3" }.freeze
+
+  def self.for(preview, extra_env = {}, web: false)
     app = GovukApps.find(preview.app_name)
 
     {
@@ -41,6 +50,7 @@ module PreviewEnv
       "GDS_SSO_STRATEGY" => "mock",
       "REDIS_URL" => "redis://redis:6379",
       "GOVUK_WEBSITE_ROOT" => "https://www.integration.publishing.service.gov.uk",
+      **(web ? WEB_SERVER_ENV : {}),
     }.merge(app.env).merge(extra_env).transform_values(&:to_s)
   end
 

@@ -40,6 +40,12 @@ class KubernetesRunner
 
   CAPACITY_MESSAGE_PREFIX = "Waiting for cluster capacity: ".freeze
 
+  # Apps hardcode their Sidekiq concurrency in config/sidekiq.yml (e.g.
+  # Publishing API's 12) - far more threads, and so database connections
+  # and memory, than a preview needs. Sidekiq's command-line options take
+  # precedence over its config file, so this needs no change in the app.
+  WORKER_CONCURRENCY = 2
+
   attr_reader :preview, :image
 
   def self.api_reachable?
@@ -163,7 +169,7 @@ class KubernetesRunner
         worker_container_name,
         component: "worker",
         env: extra_env,
-        command: GovukApps.find(preview.app_name).worker_command,
+        command: worker_command,
       ),
     )
   end
@@ -229,6 +235,11 @@ private
     ContainerName.for(preview.slug, suffix: "-overrides")
   end
 
+  def worker_command
+    command = GovukApps.find(preview.app_name).worker_command
+    command.include?("sidekiq") ? [*command, "-c", WORKER_CONCURRENCY.to_s] : command
+  end
+
   def deployment_names
     worker = GovukApps.find(preview.app_name).worker_command
     worker ? [container_name, worker_container_name] : [container_name]
@@ -278,7 +289,7 @@ private
       # A local image (see ImageResolver) only exists on the kind node it
       # was loaded onto - there's nowhere to pull it from.
       imagePullPolicy: ImageResolver.local_image?(image) ? "Never" : "IfNotPresent",
-      env: PreviewEnv.for(preview, env).map { |key, value| { name: key, value: value } },
+      env: PreviewEnv.for(preview, env, web:).map { |key, value| { name: key, value: value } },
       resources: {
         requests: {
           cpu: ENV.fetch("PREVIEW_APP_POD_CPU_REQUEST", "50m"),
