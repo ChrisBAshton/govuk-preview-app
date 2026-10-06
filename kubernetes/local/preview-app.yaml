@@ -88,7 +88,7 @@ spec:
             - containerPort: 3000
           readinessProbe:
             httpGet:
-              path: /up
+              path: /healthcheck/ready
               port: 3000
 ---
 apiVersion: apps/v1
