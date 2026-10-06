@@ -12,7 +12,8 @@ RSpec.describe GovukApps do
     it "includes frontend, publishing-api, whitehall, and their draft-stack counterparts" do
       expect(described_class.app_names).to include(
         "frontend", "draft-frontend", "content-store", "draft-content-store", "publishing-api", "whitehall",
-        "govuk-publishing-components", "govuk-content-publishing-guidance"
+        "govuk-publishing-components", "govuk-content-publishing-guidance",
+        "collections"
       )
     end
   end
@@ -96,6 +97,18 @@ RSpec.describe GovukApps do
       expect(definition.repo_url).to eq("https://github.com/alphagov/govuk-content-publishing-guidance.git")
       expect(definition.port_env_var).to eq("PORT")
       expect(definition.env).to eq({})
+    end
+
+    it "parses collections" do
+      definition = described_class.find("collections")
+
+      expect(definition.repo_url).to eq("https://github.com/alphagov/collections.git")
+      expect(definition.env).to eq(
+        "GOVUK_APP_DOMAIN" => "www.gov.uk",
+        "GOVUK_WEBSITE_ROOT" => "https://www.gov.uk",
+        "PLEK_SERVICE_CONTENT_STORE_URI" => "https://www.gov.uk/api",
+        "PLEK_SERVICE_SEARCH_API_URI" => "https://www.gov.uk/api",
+      )
     end
 
     it "returns nil for an unknown app" do

@@ -167,3 +167,12 @@ govuk-publishing-components:
 govuk-content-publishing-guidance:
   repo_url: https://github.com/alphagov/govuk-content-publishing-guidance.git
   port_env_var: PORT
+
+collections:
+  repo_url: https://github.com/alphagov/collections.git
+  port_env_var: PORT
+  env:
+    GOVUK_APP_DOMAIN: www.gov.uk
+    GOVUK_WEBSITE_ROOT: https://www.gov.uk
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+    PLEK_SERVICE_SEARCH_API_URI: https://www.gov.uk/api
