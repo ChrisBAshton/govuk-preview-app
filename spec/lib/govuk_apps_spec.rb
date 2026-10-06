@@ -11,7 +11,8 @@ RSpec.describe GovukApps do
   describe ".app_names" do
     it "includes frontend, publishing-api, whitehall, and their draft-stack counterparts" do
       expect(described_class.app_names).to include(
-        "frontend", "draft-frontend", "content-store", "draft-content-store", "publishing-api", "whitehall"
+        "frontend", "draft-frontend", "content-store", "draft-content-store", "publishing-api", "whitehall",
+        "govuk-publishing-components"
       )
     end
   end
@@ -71,6 +72,21 @@ RSpec.describe GovukApps do
     it "parses declared env_aliases" do
       expect(described_class.find("draft-frontend").env_aliases).to eq(
         "PLEK_SERVICE_CONTENT_STORE_URI" => "PLEK_SERVICE_DRAFT_CONTENT_STORE_URI",
+      )
+    end
+
+    it "parses govuk-publishing-components, including its Procfile-only MAIN_COMPONENT_GUIDE flag" do
+      definition = described_class.find("govuk-publishing-components")
+
+      expect(definition.repo_url).to eq("https://github.com/alphagov/govuk_publishing_components.git")
+      expect(definition.port_env_var).to eq("PORT")
+      expect(definition.env).to eq(
+        "GOVUK_WEBSITE_ROOT" => "https://www.gov.uk",
+        "PLEK_SERVICE_CONTENT_STORE_URI" => "https://www.gov.uk/api",
+        "PLEK_SERVICE_RUMMAGER_URI" => "https://www.gov.uk/api",
+        "MAIN_COMPONENT_GUIDE" => "true",
+        "RAILS_ENV" => "development",
+        "RACK_ENV" => "development",
       )
     end
 
