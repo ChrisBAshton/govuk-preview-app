@@ -92,7 +92,10 @@ RSpec.describe KubernetesRunner do
         "PLEK_SERVICE_CONTENT_STORE_URI" => "http://cs",
         "DISABLE_QUEUE_PUBLISHER" => "1",
       )
-      expect(deployment.dig("metadata", "labels")).to include("govuk-preview-app/preview-id" => preview.id.to_s)
+      expect(deployment.dig("metadata", "labels")).to include(
+        "govuk-preview-app/preview-id" => preview.id.to_s,
+        "govuk-preview-app/root-id" => preview.id.to_s,
+      )
     end
 
     it "raises when the Deployment never becomes available" do

@@ -90,6 +90,8 @@ class KubernetesRunner
     {
       "app.kubernetes.io/managed-by" => "govuk-preview-app",
       "govuk-preview-app/preview-id" => preview.id.to_s,
+      # Which stack it's part of - see bin/preview-usage.
+      "govuk-preview-app/root-id" => preview.root.id.to_s,
       "govuk-preview-app/app" => preview.app_name,
       "govuk-preview-app/component" => component,
     }

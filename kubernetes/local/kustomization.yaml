@@ -10,6 +10,7 @@ resources:
   - preview-app.yaml
   - postgres.yaml
   - redis.yaml
+  - metrics-server.yaml
 patches:
   # One kind node can't hold what integration's quota allows - set the
   # quota to what it can, so PreviewCapacity puts previews to sleep before

@@ -97,6 +97,8 @@ The local quota (`kubernetes/local/kustomization.yaml`) holds one full Whitehall
 
 After changing Preview App's own code, run `bin/kind-deploy` to rebuild and redeploy it (existing previews keep running). `bin/kind-down` deletes the cluster, every preview and Preview App's database.
 
+To see how much memory each preview stack actually uses, next to what its pods request and their limits, run `bin/preview-usage` (it uses metrics-server, which `bin/kind-up` installs locally).
+
 Every `kubectl` command in these scripts passes `--context kind-govuk-preview-app`, so they can never touch any other cluster. To look around yourself:
 
 ```
