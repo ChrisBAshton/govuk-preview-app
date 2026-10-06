@@ -38,7 +38,7 @@ Rails.application.configure do
   config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
 
   # Prevent health checks from clogging up the logs.
-  config.silence_healthcheck_path = "/up"
+  config.silence_healthcheck_path = "/healthcheck/ready"
 
   # Don't log any deprecations.
   config.active_support.report_deprecations = false
@@ -60,7 +60,7 @@ Rails.application.configure do
   config.hosts << base_domain
   config.hosts << /.*\.#{Regexp.escape(base_domain)}/
 
-  # Skip DNS rebinding protection for the default health check endpoint -
+  # Skip DNS rebinding protection for the health check endpoints -
   # Kubernetes probes address the pod by IP, not by any of the hosts above.
-  config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
+  config.host_authorization = { exclude: ->(request) { request.path.start_with?("/healthcheck/") } }
 end
