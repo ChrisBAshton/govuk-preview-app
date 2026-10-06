@@ -1,0 +1,28 @@
+<% content_for :page_title, "Delete preview" %>
+<% content_for :back_link do %>
+  <%= render "govuk_publishing_components/components/back_link", href: previews_path %>
+<% end %>
+
+<div class="govuk-grid-row">
+  <div class="govuk-grid-column-two-thirds">
+    <h1 class="govuk-heading-xl">Delete preview of <%= @preview.app_name %> (<%= @preview.branch %>)?</h1>
+
+    <% dependencies = @preview.tree.drop(1) %>
+    <p class="govuk-body">
+      This removes the preview and everything it runs<%= ", including its own copies of:" if dependencies.any? %>
+    </p>
+    <% if dependencies.any? %>
+      <ul class="govuk-list govuk-list--bullet">
+        <% dependencies.sort_by(&:created_at).each do |dependency| %>
+          <li><%= dependency.app_name %> (<%= dependency.branch %>)</li>
+        <% end %>
+      </ul>
+    <% end %>
+    <p class="govuk-body">Anything published or saved in it is lost. This can't be undone.</p>
+
+    <div class="govuk-button-group">
+      <%= button_to "Delete preview", preview_path(@preview), method: :delete, class: "govuk-button govuk-button--warning" %>
+      <%= link_to "Cancel", previews_path, class: "govuk-link" %>
+    </div>
+  </div>
+</div>

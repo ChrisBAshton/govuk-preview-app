@@ -27,3 +27,35 @@ $app-page-width: 1200px;
 .app-dependency-name {
   white-space: nowrap;
 }
+
+// Row actions on the previews page: links separated by pipes, like
+// Whitehall's admin tables. See PreviewsHelper#preview_actions.
+// On one line, so a label never wraps mid-way or leaves a pipe dangling.
+.app-actions {
+  white-space: nowrap;
+}
+
+.app-actions__separator {
+  margin: 0 govuk-spacing(1);
+  color: var(--govuk-secondary-text-colour, #484949);
+}
+
+// A form button (for actions that POST) styled exactly like a link -
+// .govuk-link supplies its hover and focus styles; this undoes the
+// button's own look and gives it the link colour and underline, which
+// .govuk-link only applies to real links (via :link/:visited).
+.app-link-button__form {
+  display: inline;
+}
+
+.app-link-button {
+  @include govuk-font($size: 19);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--govuk-link-colour, #1a65a6);
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
