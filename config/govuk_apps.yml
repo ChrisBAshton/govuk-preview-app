@@ -137,6 +137,10 @@ whitehall:
   setup_tasks:
     - taxonomy:populate_end_to_end_test_data
     - taxonomy:rebuild_cache
+  # Whitehall does much of its work in Sidekiq jobs - including sending
+  # changes to Publishing API (e.g. PresentPageToPublishingApiJob) - so
+  # without a worker those would just queue up and never run.
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
   env:
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
     # Not a real secret - Whitehall's own boot aborts without one at all

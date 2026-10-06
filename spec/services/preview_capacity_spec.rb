@@ -66,10 +66,11 @@ RSpec.describe PreviewCapacity do
       core = described_class.new(create(:preview, app_name: "whitehall", branch: "core"), api:)
       full = described_class.new(create(:preview, app_name: "whitehall", branch: "full", full_stack: true), api:)
 
-      # whitehall + MySQL, publishing-api web + worker + Postgres, and Redis
-      expect(core.send(:stack_needs)["requests.memory"]).to eq((384 * 3) + (256 * 2) + 32)
+      # whitehall web + worker + MySQL, publishing-api web + worker +
+      # Postgres, and Redis
+      expect(core.send(:stack_needs)["requests.memory"]).to eq((384 * 4) + (256 * 2) + 32)
       # ...plus two Content Stores (each with Postgres) and two Frontends
-      expect(full.send(:stack_needs)["requests.memory"]).to eq((384 * 7) + (256 * 4) + 32)
+      expect(full.send(:stack_needs)["requests.memory"]).to eq((384 * 8) + (256 * 4) + 32)
     end
   end
 
