@@ -206,6 +206,21 @@ RSpec.describe PreviewBuilder do
         )
       end
 
+      it "points whitehall's public links at its own Frontends, via the manifest's env_aliases" do
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
+
+        described_class.new(preview).build!
+
+        frontend = preview.reload.dependents.find_by!(app_name: "frontend")
+        draft_frontend = preview.dependents.find_by!(app_name: "draft-frontend")
+        expect(runners[preview]).to have_received(:start!).with(
+          extra_env: hash_including(
+            "GOVUK_WEBSITE_ROOT" => frontend.url,
+            "PLEK_SERVICE_DRAFT_ORIGIN_URI" => draft_frontend.url,
+          ),
+        )
+      end
+
       it "does not inject a _PUBLIC_URL for a dependency that isn't publicly_readable" do
         preview = create(:preview, app_name: "whitehall", branch: "my-branch", full_stack: true)
 
@@ -306,6 +321,16 @@ RSpec.describe PreviewBuilder do
         )
         expect(runners[preview]).to have_received(:start!).with(
           extra_env: hash_excluding("PLEK_SERVICE_CONTENT_STORE_URI"),
+        )
+      end
+
+      it "leaves whitehall's public links pointing at the real integration site, with no Frontends of its own" do
+        preview = create(:preview, app_name: "whitehall", branch: "my-branch")
+
+        described_class.new(preview).build!
+
+        expect(runners[preview]).to have_received(:start!).with(
+          extra_env: hash_excluding("GOVUK_WEBSITE_ROOT", "PLEK_SERVICE_DRAFT_ORIGIN_URI"),
         )
       end
     end

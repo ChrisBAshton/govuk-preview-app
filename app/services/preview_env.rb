@@ -18,12 +18,16 @@ require "securerandom"
 # *any* rake task, not just when a worker actually runs - so any app using
 # that gem (most GOV.UK admin apps) needs a reachable Redis just to boot.
 # Each stack has its own, with a database per app - see StackRedis.
-# GOVUK_WEBSITE_ROOT: a standard Plek/GOV.UK env var (not app-specific) -
-# some apps gate integration/staging-only behaviour on it containing
-# "integration"/"staging" (e.g. Whitehall's /flipflop dashboard access
-# filter, Whitehall.integration_or_staging?) - previews are integration-
-# like environments, so this makes that recognised rather than silently
-# blocked under RAILS_ENV=production.
+# GOVUK_ENVIRONMENT: the standard variable every GOV.UK app on Kubernetes
+# gets, saying which environment it's in (govuk_app_config's
+# GovukEnvironment.current) - previews behave as integration, so e.g.
+# Whitehall's integration-only features and /flipflop dashboard are on.
+# GOVUK_WEBSITE_ROOT: where an app's public links point (Plek.website_root)
+# - the real integration site by default. An app whose stack runs its own
+# Frontend can point its links there instead, via the manifest's
+# `env_aliases` (see Whitehall's in config/govuk_apps.yml). Older versions
+# of some apps (e.g. Whitehall, before it read GOVUK_ENVIRONMENT) also
+# guessed their environment from this containing "integration".
 # WEB_CONCURRENCY/RAILS_MAX_THREADS (web pods only): every previewed app
 # configures Puma through govuk_app_config's GovukPuma, which by default
 # forks 2 worker processes - a full extra copy of the app each - with 5
@@ -48,6 +52,7 @@ module PreviewEnv
       "RAILS_SERVE_STATIC_FILES" => "true",
       "GDS_SSO_STRATEGY" => "mock",
       "REDIS_URL" => StackRedis.url_for(preview),
+      "GOVUK_ENVIRONMENT" => "integration",
       "GOVUK_WEBSITE_ROOT" => "https://www.integration.publishing.service.gov.uk",
       **(web ? WEB_SERVER_ENV : {}),
     }.merge(app.env).merge(extra_env).transform_values(&:to_s)

@@ -9,5 +9,9 @@ RSpec.describe ConfigOverrides do
     it "reconnects from DATABASE_URL on top of the app's own config, rather than instead of it" do
       expect(described_class.content).to include("configs_for(env_name: Rails.env)", "merge(url: ENV[\"DATABASE_URL\"])")
     end
+
+    it "doesn't patch any app's own code - e.g. Whitehall's public links come from env vars instead" do
+      expect(described_class.content).not_to include("Edition", "prepend", "Whitehall")
+    end
   end
 end

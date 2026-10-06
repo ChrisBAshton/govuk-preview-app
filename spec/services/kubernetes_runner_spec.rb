@@ -99,6 +99,7 @@ RSpec.describe KubernetesRunner do
         "subPath" => "zzz_preview_app_overrides.rb",
       )
       expect(env_hash(container)).to include(
+        "GOVUK_ENVIRONMENT" => "integration",
         "WEB_CONCURRENCY" => "0",
         "RAILS_MAX_THREADS" => "3",
         "PORT" => "3000",
