@@ -220,6 +220,11 @@ RSpec.describe GovukApps do
       expect(described_class.full_stack_option?("whitehall")).to be(true)
     end
 
+    it "offers a full stack only to apps that declare one themselves, not just by depending on one that does" do
+      expect(described_class.full_stack_option?("publishing-api")).to be(true)
+      expect(described_class.full_stack_option?("content-store")).to be(false)
+    end
+
     it "offers no full stack for an app whose full stack is no different" do
       expect(described_class.full_stack_extras("frontend")).to eq([])
       expect(described_class.full_stack_option?("frontend")).to be(false)

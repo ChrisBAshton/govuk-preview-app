@@ -24,7 +24,7 @@ RSpec.describe PreviewBuilder do
   end
 
   def stub_databases(url = "db-url")
-    allow(KubernetesDatabaseRunner).to receive(:new).and_return(instance_double(KubernetesDatabaseRunner, start!: url, database_url: url))
+    allow(KubernetesDatabaseRunner).to receive(:new).and_return(instance_double(KubernetesDatabaseRunner, start!: url, database_url: url, env_var: "DATABASE_URL"))
   end
 
   def internal_uri(preview)
@@ -106,7 +106,7 @@ RSpec.describe PreviewBuilder do
         draft_content_store = preview.dependents.find_by!(app_name: "draft-content-store")
         runner = runners[preview]
 
-        expect(runner).to have_received(:migrate!).with(extra_env: hash_including("DATABASE_URL" => "postgresql://db/app_preview"))
+        expect(runner).to have_received(:migrate!).with(extra_env: hash_including("DATABASE_URL" => "postgresql://db/app_preview"), adapter: "postgresql")
         expect(runner).to have_received(:start!).with(
           extra_env: hash_including(
             "DATABASE_URL" => "postgresql://db/app_preview",

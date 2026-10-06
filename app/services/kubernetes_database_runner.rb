@@ -1,7 +1,8 @@
-# One dedicated, never-shared database per preview, as a single-replica
-# StatefulSet with its own small persistent volume and a Service of the
-# same name - so the DATABASE_URL handed to the app's own pods
-# (`<adapter>://<user>@<service name>/app_preview`) resolves within the
+# One dedicated, never-shared database per preview - MySQL, Postgres or
+# MongoDB - as a single-replica StatefulSet with its own small persistent
+# volume and a Service of the same name - so the URL handed to the app's
+# own pods (`<adapter>://<user>@<service name>/app_preview`, as
+# DATABASE_URL, or MONGODB_URI for Mongoid apps) resolves within the
 # namespace.
 #
 # The volume is what lets a preview survive its pod being rescheduled (a
@@ -11,7 +12,8 @@ class KubernetesDatabaseRunner
   class DatabaseError < KubernetesApi::Error; end
 
   DATABASE_NAME = "app_preview".freeze
-  # The official mysql/postgres images both run as this uid when not
+  MYSQL_ROOT_PASSWORD = "root".freeze
+  # The official mysql/postgres/mongo images all run as this uid when not
   # started as root - which the namespace's `restricted` Pod Security
   # standard won't allow.
   DATABASE_UID = 999
@@ -77,10 +79,22 @@ class KubernetesDatabaseRunner
 
   def database_url
     case database.adapter
-    when "mysql2" then "mysql2://root@#{container_name}/#{DATABASE_NAME}"
+    # MySQL's root user gets a password (not secret - nothing outside the
+    # previews namespace can reach it) because Rails merges DATABASE_URL into
+    # the app's own database.yml: with no password in the URL, an app's own
+    # `password:` (e.g. Collections Publisher's) would be tried for root
+    # instead, and refused.
+    when "mysql2" then "mysql2://root:#{MYSQL_ROOT_PASSWORD}@#{container_name}/#{DATABASE_NAME}"
     when "postgresql" then "postgresql://postgres@#{container_name}/#{DATABASE_NAME}"
+    when "mongodb" then "mongodb://#{container_name}/#{DATABASE_NAME}"
     else raise DatabaseError, "Unknown database adapter: #{database.adapter}"
     end
+  end
+
+  # The env var the app reads its database's address from - Mongoid apps'
+  # config/mongoid.yml reads MONGODB_URI; ActiveRecord apps, DATABASE_URL.
+  def env_var
+    database.adapter == "mongodb" ? "MONGODB_URI" : "DATABASE_URL"
   end
 
 private
@@ -136,6 +150,7 @@ private
     {
       name: "database",
       image: database.image,
+      command: command,
       args: args,
       env: init_env.map { |key, value| { name: key, value: value } },
       ports: [{ name: "db", containerPort: port }],
@@ -146,7 +161,7 @@ private
       },
       securityContext: KubernetesRunner.container_security_context,
       volumeMounts: [{ name: "data", mountPath: VOLUME_MOUNT }],
-    }
+    }.compact
   end
 
   def volume_claim_template
@@ -160,9 +175,18 @@ private
     { metadata: { name: "data" }, spec: spec }
   end
 
-  # Both images refuse to initialise into a non-empty directory, and a
+  # The official mongo image's entrypoint doesn't create a custom --dbpath
+  # when it isn't started as root, so this does first. (mysql/postgres
+  # create their own data directories, so keep their images' defaults.)
+  def command
+    return unless database.adapter == "mongodb"
+
+    ["bash", "-c", "mkdir -p #{VOLUME_MOUNT}/mongo && exec docker-entrypoint.sh \"$@\"", "--"]
+  end
+
+  # Each image refuses to initialise into a non-empty directory, and a
   # freshly-formatted volume's root already holds lost+found - so each
-  # keeps its data one level down, which it creates itself.
+  # keeps its data one level down.
   #
   # The rest sizes each server for a preview's tiny amount of data and a
   # handful of connections, rather than the images' production-minded
@@ -182,6 +206,9 @@ private
       ]
     when "postgresql"
       %w[-c shared_buffers=16MB -c max_connections=40 -c work_mem=2MB]
+    when "mongodb"
+      # WiredTiger otherwise takes half the container's memory for its cache.
+      %W[mongod --dbpath #{VOLUME_MOUNT}/mongo --bind_ip_all --wiredTigerCacheSizeGB 0.25]
     else
       []
     end
@@ -190,26 +217,31 @@ private
   def init_env
     case database.adapter
     when "mysql2"
-      { "MYSQL_ALLOW_EMPTY_PASSWORD" => "yes", "MYSQL_DATABASE" => DATABASE_NAME }
+      { "MYSQL_ROOT_PASSWORD" => MYSQL_ROOT_PASSWORD, "MYSQL_DATABASE" => DATABASE_NAME }
     when "postgresql"
       { "POSTGRES_HOST_AUTH_METHOD" => "trust", "POSTGRES_DB" => DATABASE_NAME, "PGDATA" => "#{VOLUME_MOUNT}/postgres" }
+    when "mongodb"
+      {} # No auth, and databases are created on first write.
     else
       raise DatabaseError, "Unknown database adapter: #{database.adapter}"
     end
   end
 
   def port
-    database.adapter == "mysql2" ? 3306 : 5432
+    { "mysql2" => 3306, "postgresql" => 5432, "mongodb" => 27_017 }.fetch(database.adapter)
   end
 
   # Over TCP, not the Unix socket: both official images run a short-lived
   # *temporary* init server (Unix socket only) before their real restart on
   # TCP - a socket-based check answers "ready" during that false start.
+  READY_COMMANDS = {
+    "mysql2" => ["mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p#{MYSQL_ROOT_PASSWORD}", "--silent"],
+    "postgresql" => ["pg_isready", "-U", "postgres", "-h", "127.0.0.1"],
+    "mongodb" => ["mongosh", "--quiet", "--host", "127.0.0.1", "--eval", "db.adminCommand('ping').ok"],
+  }.freeze
+
   def ready_command
-    case database.adapter
-    when "mysql2" then ["mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "--silent"]
-    when "postgresql" then ["pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
-    end
+    READY_COMMANDS.fetch(database.adapter)
   end
 
   def ready?

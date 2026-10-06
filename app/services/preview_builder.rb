@@ -87,9 +87,9 @@ class PreviewBuilder
     runner.prepare!
 
     if app.database
-      database_url = KubernetesDatabaseRunner.new(preview, app.database).start!
-      extra_env = extra_env.merge("DATABASE_URL" => database_url)
-      runner.migrate!(extra_env: extra_env)
+      database = KubernetesDatabaseRunner.new(preview, app.database)
+      extra_env = extra_env.merge(database.env_var => database.start!)
+      runner.migrate!(extra_env: extra_env, adapter: app.database.adapter)
       runner.seed!(extra_env: extra_env)
     end
 
@@ -123,7 +123,10 @@ private
   # dependencies (e.g. Publishing API re-sends everything to the new Content
   # Stores).
   def reconfigure!(app, extra_env)
-    extra_env = extra_env.merge("DATABASE_URL" => KubernetesDatabaseRunner.new(preview, app.database).database_url) if app.database
+    if app.database
+      database = KubernetesDatabaseRunner.new(preview, app.database)
+      extra_env = extra_env.merge(database.env_var => database.database_url)
+    end
     return if preview.env_digest == digest(extra_env)
 
     runner = KubernetesRunner.new(preview, image: KubernetesRunner.new(preview).current_image)
