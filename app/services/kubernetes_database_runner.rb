@@ -164,8 +164,28 @@ private
   # Both images refuse to initialise into a non-empty directory, and a
   # freshly-formatted volume's root already holds lost+found - so each
   # keeps its data one level down, which it creates itself.
+  #
+  # The rest sizes each server for a preview's tiny amount of data and a
+  # handful of connections, rather than the images' production-minded
+  # defaults - MySQL 8's performance schema alone takes a couple of hundred
+  # MB, and its default buffer pool another 128MB.
   def args
-    database.adapter == "mysql2" ? ["--datadir=#{VOLUME_MOUNT}/mysql"] : []
+    case database.adapter
+    when "mysql2"
+      %W[
+        --datadir=#{VOLUME_MOUNT}/mysql
+        --performance-schema=OFF
+        --innodb-buffer-pool-size=32M
+        --innodb-log-buffer-size=8M
+        --max-connections=50
+        --table-open-cache=200
+        --skip-name-resolve
+      ]
+    when "postgresql"
+      %w[-c shared_buffers=16MB -c max_connections=40 -c work_mem=2MB]
+    else
+      []
+    end
   end
 
   def init_env
