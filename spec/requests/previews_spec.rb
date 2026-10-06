@@ -171,5 +171,17 @@ RSpec.describe "Previews" do
       expect(response).to redirect_to(previews_path)
       expect(preview.reload.status).to eq("stopping")
     end
+
+    it "still deletes a preview whose app_name is no longer in the manifest (e.g. a renamed/removed entry)" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :failed)
+      preview.update_column(:app_name, "no-longer-in-the-manifest")
+
+      expect {
+        delete preview_path(preview)
+      }.to change(PreviewsDestroyJob.jobs, :size).by(1)
+
+      expect(response).to redirect_to(previews_path)
+      expect(preview.reload.status).to eq("stopping")
+    end
   end
 end

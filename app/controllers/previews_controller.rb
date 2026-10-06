@@ -24,7 +24,10 @@ class PreviewsController < ApplicationController
 
   def destroy
     preview = Preview.find(params[:id])
-    preview.update!(status: :stopping)
+    # update_column, not update! - a preview must always be deletable, even
+    # if its app_name/branch would no longer pass validation (e.g. the
+    # manifest entry it was created against has since been renamed/removed).
+    preview.update_column(:status, :stopping)
     PreviewsDestroyJob.perform_async(preview.id)
 
     redirect_to previews_path, notice: "Preview of #{preview.app_name} (#{preview.branch}) is being removed."

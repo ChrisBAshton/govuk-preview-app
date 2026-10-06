@@ -1,4 +1,14 @@
+require "digest"
+
 class Preview < ApplicationRecord
+  # The slug doubles as a DNS label (see #hostname) - capped at 63 chars by
+  # RFC 1035, same limit ContainerName truncates Kubernetes object names to.
+  # A long branch (e.g. a local: tag with a -dirty-<timestamp> suffix),
+  # especially multiplied by a dependency's "-for-<parent-slug>" suffix, can
+  # push the naive "app-branch[-for-parent]" slug past that - truncated and
+  # made unique with a digest, so the hostname this becomes always resolves.
+  MAX_SLUG_LENGTH = 63
+  SLUG_DIGEST_LENGTH = 8
   enum :status, {
     queued: "queued",
     # Waiting for the branch's image to be pushed by its own GitHub Actions
@@ -89,6 +99,17 @@ class Preview < ApplicationRecord
     "#{self.class.scheme}://#{hostname}#{port_suffix}"
   end
 
+  # Truncates a parameterized slug to MAX_SLUG_LENGTH, appending a digest of
+  # the full, untruncated string so two slugs that only differ after the
+  # truncation point still end up distinct - same approach as ContainerName.
+  def self.fit_slug(slug)
+    return slug if slug.length <= MAX_SLUG_LENGTH
+
+    digest = Digest::SHA256.hexdigest(slug).first(SLUG_DIGEST_LENGTH)
+    truncated_length = MAX_SLUG_LENGTH - SLUG_DIGEST_LENGTH - 1
+    "#{slug[0, truncated_length]}-#{digest}"
+  end
+
 private
 
   # A `local:<tag>` branch is an image built from a developer's own
@@ -112,7 +133,7 @@ private
     # app+branch - otherwise two previews both depending on
     # publishing-api/main would collide.
     base = "#{base}-for-#{parent.slug}" if parent.present?
-    self.slug ||= base.parameterize
+    self.slug ||= self.class.fit_slug(base.parameterize)
   end
 
   def generate_public_hostname

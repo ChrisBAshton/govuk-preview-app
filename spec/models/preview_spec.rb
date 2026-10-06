@@ -38,6 +38,28 @@ RSpec.describe Preview do
       expect(preview.slug).to eq("frontend-my-feature-branch")
     end
 
+    it "truncates and appends a digest when the naive slug would exceed the 63-character DNS label limit" do
+      enable_local_images
+      preview = build(:preview, app_name: "govuk-publishing-components", branch: "local:main-807400d-dirty-20261006103043")
+
+      preview.valid?
+
+      expect(preview.slug.length).to eq(63)
+      expect(preview.slug).to start_with("govuk-publishing-components-local-main-807400d-dirty-2")
+    end
+
+    it "produces distinct truncated slugs for branches that only differ after the truncation point" do
+      enable_local_images
+      long_branch = "local:#{'a' * 60}"
+      preview_one = build(:preview, app_name: "frontend", branch: "#{long_branch}-one")
+      preview_two = build(:preview, app_name: "frontend", branch: "#{long_branch}-two")
+
+      preview_one.valid?
+      preview_two.valid?
+
+      expect(preview_one.slug).not_to eq(preview_two.slug)
+    end
+
     it "does not overwrite an explicitly set slug" do
       preview = build(:preview, app_name: "frontend", branch: "my-branch", slug: "custom-slug")
 
