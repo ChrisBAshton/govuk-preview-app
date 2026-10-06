@@ -98,6 +98,7 @@ private
       app_pods = [KubernetesRunner] * (app.worker_command ? 2 : 1)
       app.database ? [*app_pods, KubernetesDatabaseRunner] : app_pods
     end
+    pods << StackRedis
     pods << KubernetesRunner if building
 
     {

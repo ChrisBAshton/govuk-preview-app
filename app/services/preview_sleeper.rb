@@ -21,6 +21,7 @@ class PreviewSleeper
   def sleep!
     previews = root.tree
     previews.each { |preview| scale(preview, 0) }
+    StackRedis.new(root, api: api).scale!(0)
     Preview.where(id: previews.map(&:id)).update_all(status: "sleeping", status_message: nil, updated_at: Time.current)
   end
 
@@ -37,6 +38,7 @@ class PreviewSleeper
     PreviewCapacity.make_room_for!(root)
     Preview.where(id: previews.map(&:id)).update_all(status: "waking", status_message: nil, updated_at: Time.current)
 
+    StackRedis.new(root, api: api).scale!(1)
     databases = previews.filter_map { |preview| database_runner(preview) }
     databases.each { |database| database.scale!(1) }
     databases.each(&:wait_until_ready!)

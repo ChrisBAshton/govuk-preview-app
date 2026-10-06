@@ -90,7 +90,8 @@ RSpec.describe KubernetesRunner do
         "WEB_CONCURRENCY" => "0",
         "RAILS_MAX_THREADS" => "3",
         "PORT" => "3000",
-        "REDIS_URL" => "redis://redis:6379",
+        # publishing-api is its own stack's top-level app, so database 0.
+        "REDIS_URL" => "redis://govuk-preview-app-#{preview.slug}-redis:6379/0",
         "PLEK_SERVICE_CONTENT_STORE_URI" => "http://cs",
         "DISABLE_QUEUE_PUBLISHER" => "1",
       )

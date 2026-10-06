@@ -17,8 +17,7 @@ require "securerandom"
 # REDIS_URL: govuk_sidekiq's railtie eagerly connects to Redis at boot for
 # *any* rake task, not just when a worker actually runs - so any app using
 # that gem (most GOV.UK admin apps) needs a reachable Redis just to boot.
-# Every preview shares one Redis, the `redis` Service in the previews
-# namespace (see kubernetes/previews/redis.yaml).
+# Each stack has its own, with a database per app - see StackRedis.
 # GOVUK_WEBSITE_ROOT: a standard Plek/GOV.UK env var (not app-specific) -
 # some apps gate integration/staging-only behaviour on it containing
 # "integration"/"staging" (e.g. Whitehall's /flipflop dashboard access
@@ -48,7 +47,7 @@ module PreviewEnv
       "SECRET_KEY_BASE" => SecureRandom.hex(32),
       "RAILS_SERVE_STATIC_FILES" => "true",
       "GDS_SSO_STRATEGY" => "mock",
-      "REDIS_URL" => "redis://redis:6379",
+      "REDIS_URL" => StackRedis.url_for(preview),
       "GOVUK_WEBSITE_ROOT" => "https://www.integration.publishing.service.gov.uk",
       **(web ? WEB_SERVER_ENV : {}),
     }.merge(app.env).merge(extra_env).transform_values(&:to_s)

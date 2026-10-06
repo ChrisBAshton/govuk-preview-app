@@ -24,6 +24,7 @@ RSpec.describe PreviewSleeper do
         [KubernetesRunner.new(root).worker_container_name, 0],
         [KubernetesDatabaseRunner.new(root, GovukApps.find("publishing-api").database).container_name, 0],
         [KubernetesRunner.new(content_store).container_name, 0],
+        [StackRedis.new(root).name, 0],
         [KubernetesDatabaseRunner.new(content_store, GovukApps.find("content-store").database).container_name, 0],
       )
       expect([root.reload.status, content_store.reload.status]).to eq(%w[sleeping sleeping])

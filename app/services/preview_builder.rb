@@ -42,7 +42,10 @@ class PreviewBuilder
 
     # Room for the whole stack is made once, up front, by its top-level
     # preview - putting least recently used previews to sleep if need be.
-    PreviewCapacity.make_room_for!(preview, building: true) if preview.parent_id.nil? && !preview.running?
+    if preview.parent_id.nil?
+      PreviewCapacity.make_room_for!(preview, building: true) unless preview.running?
+      StackRedis.new(preview).start!
+    end
     propagated_env, own_env = build_dependencies!(app, inherited_env)
     dependency_env = inherited_env.merge(propagated_env)
 

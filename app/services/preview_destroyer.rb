@@ -17,6 +17,7 @@ class PreviewDestroyer
 
     database = GovukApps.find(preview.app_name)&.database
     KubernetesDatabaseRunner.new(preview, database).stop! if database
+    StackRedis.new(preview).stop! if preview.parent_id.nil?
 
     preview.destroy!
   end

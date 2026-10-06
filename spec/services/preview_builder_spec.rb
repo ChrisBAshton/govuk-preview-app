@@ -20,6 +20,7 @@ RSpec.describe PreviewBuilder do
     end
     allow(KubernetesRunner).to receive(:new) { |preview, **| runners[preview] }
     allow(PreviewCapacity).to receive(:make_room_for!)
+    allow(StackRedis).to receive(:new).and_return(instance_double(StackRedis, start!: nil))
   end
 
   def stub_databases(url = "db-url")

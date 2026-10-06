@@ -5,8 +5,9 @@ RSpec.describe PreviewCapacity do
   let(:quota_path) { api.path("v1", "resourcequotas", "previews") }
   let(:root) { create(:preview, app_name: "frontend", branch: "new-branch") }
 
-  # frontend: one app pod - 384Mi requested, 1536Mi limit (+ one task pod
-  # while building).
+  # frontend: one app pod - 384Mi requested, 1536Mi limit - plus its
+  # stack's Redis - 32Mi requested, 128Mi limit (+ one task pod while
+  # building).
   def stub_quota(requests_used:, requests_hard: "1Gi", limits_used: "0", limits_hard: "64Gi")
     stub_request(:get, k8s_url(quota_path)).to_return(json_response({
       status: {
@@ -36,13 +37,13 @@ RSpec.describe PreviewCapacity do
     it "counts a task pod's worth of extra room while building" do
       stub_quota(requests_used: "600Mi")
 
-      expect(capacity(building: true).shortfall).to eq("requests.memory" => 344)
+      expect(capacity(building: true).shortfall).to eq("requests.memory" => 376)
     end
 
     it "checks limits as well as requests" do
       stub_quota(requests_used: "0", limits_used: "63Gi")
 
-      expect(capacity.shortfall).to eq("limits.memory" => 512)
+      expect(capacity.shortfall).to eq("limits.memory" => 640)
     end
 
     it "doesn't count what the stack's own pods already hold (e.g. resuming an interrupted build)" do
@@ -65,10 +66,10 @@ RSpec.describe PreviewCapacity do
       core = described_class.new(create(:preview, app_name: "whitehall", branch: "core"), api:)
       full = described_class.new(create(:preview, app_name: "whitehall", branch: "full", full_stack: true), api:)
 
-      # whitehall + MySQL, publishing-api web + worker + Postgres
-      expect(core.send(:stack_needs)["requests.memory"]).to eq((384 * 3) + (256 * 2))
+      # whitehall + MySQL, publishing-api web + worker + Postgres, and Redis
+      expect(core.send(:stack_needs)["requests.memory"]).to eq((384 * 3) + (256 * 2) + 32)
       # ...plus two Content Stores (each with Postgres) and two Frontends
-      expect(full.send(:stack_needs)["requests.memory"]).to eq((384 * 7) + (256 * 4))
+      expect(full.send(:stack_needs)["requests.memory"]).to eq((384 * 7) + (256 * 4) + 32)
     end
   end
 
@@ -111,7 +112,7 @@ RSpec.describe PreviewCapacity do
       create(:preview, app_name: "frontend", branch: "building", status: :starting)
       stub_quota(requests_used: "1Gi")
 
-      expect { capacity.make_room! }.to raise_error(described_class::AtCapacityError, /needs 384Mi more memory than is free/)
+      expect { capacity.make_room! }.to raise_error(described_class::AtCapacityError, /needs 416Mi more memory than is free/)
       expect(PreviewSleeper).not_to have_received(:new)
     end
   end
