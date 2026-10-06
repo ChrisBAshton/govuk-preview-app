@@ -13,7 +13,7 @@ RSpec.describe GovukApps do
       expect(described_class.app_names).to include(
         "frontend", "draft-frontend", "content-store", "draft-content-store", "publishing-api", "whitehall",
         "govuk-publishing-components", "govuk-content-publishing-guidance",
-        "collections"
+        "collections", "feedback"
       )
     end
   end
@@ -108,6 +108,17 @@ RSpec.describe GovukApps do
         "GOVUK_WEBSITE_ROOT" => "https://www.gov.uk",
         "PLEK_SERVICE_CONTENT_STORE_URI" => "https://www.gov.uk/api",
         "PLEK_SERVICE_SEARCH_API_URI" => "https://www.gov.uk/api",
+      )
+    end
+
+    it "parses feedback" do
+      definition = described_class.find("feedback")
+
+      expect(definition.repo_url).to eq("https://github.com/alphagov/feedback.git")
+      expect(definition.env).to eq(
+        "GOVUK_APP_DOMAIN" => "www.gov.uk",
+        "GOVUK_WEBSITE_ROOT" => "https://www.gov.uk",
+        "PLEK_SERVICE_CONTENT_STORE_URI" => "https://www.gov.uk/api",
       )
     end
 
