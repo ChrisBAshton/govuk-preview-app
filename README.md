@@ -146,3 +146,7 @@ bundle exec rspec
 ```
 
 Kubernetes, GitHub and GHCR are all stubbed with WebMock - the specs never need a cluster.
+
+## Licence
+
+[MIT License](LICENCE)
