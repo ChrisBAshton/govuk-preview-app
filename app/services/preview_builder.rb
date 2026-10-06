@@ -7,7 +7,7 @@ class PreviewBuilder
   class DependencyError < StandardError; end
 
   # Where a dependency left out of a core stack points instead - see
-  # `full_stack_only` in config/govuk_apps.yml.
+  # `full_stack_dependencies` in config/govuk_apps.yml.
   SINK_URI = "http://sink".freeze
 
   RESCUED_ERRORS = [
@@ -138,8 +138,8 @@ private
     Digest::SHA256.hexdigest(env.sort.to_h.to_json)
   end
 
-  def left_out?(dep_name)
-    GovukApps.find(dep_name).full_stack_only && !preview.root.full_stack
+  def left_out?(app, dep_name)
+    app.full_stack_dependencies.include?(dep_name) && !preview.root.full_stack
   end
 
   # Returns [env passed on to later siblings and the parent, env for this
@@ -147,8 +147,8 @@ private
   def build_dependencies!(app, inherited_env)
     own_env = {}
 
-    propagated_env = app.dependencies.each_with_object({}) do |dep_name, env|
-      if left_out?(dep_name)
+    propagated_env = (app.dependencies + app.full_stack_dependencies).each_with_object({}) do |dep_name, env|
+      if left_out?(app, dep_name)
         own_env["PLEK_SERVICE_#{dep_name.upcase.tr('-', '_')}_URI"] = SINK_URI
         next
       end

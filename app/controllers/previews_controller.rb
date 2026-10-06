@@ -73,6 +73,8 @@ class PreviewsController < ApplicationController
 private
 
   def preview_params
-    params.expect(preview: %i[app_name branch full_stack])
+    attributes = params.expect(preview: [:app_name, :branch, { full_stack_for: {} }])
+    full_stack_for = attributes.delete(:full_stack_for).to_h
+    attributes.merge(full_stack: full_stack_for[attributes[:app_name]] == "true")
   end
 end

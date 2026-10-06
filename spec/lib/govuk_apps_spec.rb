@@ -43,7 +43,8 @@ RSpec.describe GovukApps do
     it "parses declared dependencies, in order" do
       definition = described_class.find("whitehall")
 
-      expect(definition.dependencies).to eq(%w[publishing-api frontend draft-frontend])
+      expect(definition.dependencies).to eq(%w[publishing-api])
+      expect(definition.full_stack_dependencies).to eq(%w[frontend draft-frontend])
       expect(definition.database).to have_attributes(adapter: "mysql2", image: "mysql:8")
     end
 
@@ -57,7 +58,8 @@ RSpec.describe GovukApps do
       definition = described_class.find("publishing-api")
 
       expect(definition.worker_command).to eq(%w[bundle exec sidekiq -C ./config/sidekiq.yml])
-      expect(definition.dependencies).to eq(%w[content-store draft-content-store])
+      expect(definition.dependencies).to eq([])
+      expect(definition.full_stack_dependencies).to eq(%w[content-store draft-content-store])
     end
 
     it "parses publicly_readable" do
@@ -127,9 +129,21 @@ RSpec.describe GovukApps do
       expect(described_class.dependency_tree("whitehall", full_stack: false)).to eq(%w[publishing-api])
     end
 
-    it "parses full_stack_only and resync_tasks" do
-      expect(described_class.find("content-store").full_stack_only).to be(true)
-      expect(described_class.find("publishing-api")).to have_attributes(full_stack_only: false, resync_tasks: %w[represent_downstream:all])
+    it "parses resync_tasks" do
+      expect(described_class.find("publishing-api").resync_tasks).to eq(%w[represent_downstream:all])
+    end
+  end
+
+  describe ".full_stack_option? and .full_stack_extras" do
+    it "lists what an app's own full stack adds - e.g. Whitehall's Frontends, and Publishing API's Content Stores" do
+      expect(described_class.full_stack_extras("whitehall")).to eq(%w[content-store draft-content-store frontend draft-frontend])
+      expect(described_class.full_stack_extras("publishing-api")).to eq(%w[content-store draft-content-store])
+      expect(described_class.full_stack_option?("whitehall")).to be(true)
+    end
+
+    it "offers no full stack for an app whose full stack is no different" do
+      expect(described_class.full_stack_extras("frontend")).to eq([])
+      expect(described_class.full_stack_option?("frontend")).to be(false)
     end
   end
 end

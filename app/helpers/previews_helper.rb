@@ -10,13 +10,33 @@ module PreviewsHelper
     end
   end
 
-  # What the branch field accepts - see ImageResolver.
-  # Whether this app's full stack differs from its core stack at all - e.g.
-  # not for Frontend, which has no dependencies.
-  def has_full_stack_extras?(preview)
-    GovukApps.dependency_tree(preview.app_name) != GovukApps.dependency_tree(preview.app_name, full_stack: false)
+  # Revealed beneath an app's radio button on the new-preview form, for apps
+  # whose full stack runs more than their core one. Each app gets its own
+  # field (preview[full_stack_for][<app>]), so a box ticked under one app
+  # and then hidden by choosing another is never mistaken for the new
+  # choice - see PreviewsController#preview_params.
+  def full_stack_checkbox(app_name, checked:)
+    extras = GovukApps.full_stack_extras(app_name)
+
+    render "govuk_publishing_components/components/checkboxes", {
+      id: "preview_full_stack_#{app_name.underscore}",
+      name: "preview[full_stack_for][#{app_name}]",
+      heading: "Full stack",
+      visually_hide_heading: true,
+      no_hint_text: true,
+      items: [
+        {
+          label: "Full stack",
+          value: "true",
+          checked: checked,
+          hint: "Also runs #{extras.to_sentence}, so this preview's published and draft pages can be viewed - " \
+                "using more memory. Can be added or removed later.",
+        },
+      ],
+    }
   end
 
+  # What the branch field accepts - see ImageResolver.
   def preview_action(text, path, modifier, method: :post, **options)
     button_to(text, path, method:, class: "govuk-button #{modifier} govuk-!-margin-bottom-0", form_class: "govuk-!-display-inline-block", **options)
   end
@@ -37,7 +57,7 @@ module PreviewsHelper
   def preview_actions(preview)
     buttons = []
     buttons << preview_action("Sleep", sleep_preview_path(preview), "govuk-button--secondary") if preview.running?
-    if preview.running? && preview.status_message.blank? && has_full_stack_extras?(preview)
+    if preview.running? && preview.status_message.blank? && GovukApps.full_stack_option?(preview.app_name)
       label = preview.full_stack? ? "Remove full stack" : "Add full stack"
       buttons << preview_action(label, resize_preview_path(preview, full_stack: !preview.full_stack?), "govuk-button--secondary")
     end

@@ -26,6 +26,7 @@ class Preview < ApplicationRecord
   validate :branch_is_a_usable_source
 
   before_validation :generate_slug, on: :create
+  before_validation :ignore_full_stack_without_option
   before_validation :generate_public_hostname, on: :create
 
   def self.base_domain
@@ -90,6 +91,13 @@ class Preview < ApplicationRecord
   end
 
 private
+
+  # Only some apps have a full stack that's any different from their core
+  # one (see GovukApps.full_stack_option?) - for the rest, there's nothing
+  # to switch on.
+  def ignore_full_stack_without_option
+    self.full_stack = false if full_stack && !GovukApps.full_stack_option?(app_name)
+  end
 
   # A `local:<tag>` branch is an image built from a developer's own
   # checkout (see ImageResolver, bin/preview-build) - only usable locally.

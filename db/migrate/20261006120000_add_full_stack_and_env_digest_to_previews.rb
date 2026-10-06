@@ -1,6 +1,6 @@
-# full_stack: whether a top-level preview's stack includes the apps the
-# manifest marks `full_stack_only` (e.g. Content Stores and Frontends) -
-# see PreviewBuilder. Previews default to the lighter core stack.
+# full_stack: whether a top-level preview's stack includes its apps'
+# `full_stack_dependencies` (e.g. Content Stores and Frontends) - see
+# PreviewBuilder. Previews default to the lighter core stack.
 #
 # env_digest: which dependency addresses a running preview was last started
 # with, so a change of stack size can tell which running previews need

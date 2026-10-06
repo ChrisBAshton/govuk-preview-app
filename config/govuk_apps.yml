@@ -51,22 +51,24 @@
 # the exact same codebase as frontend, which only ever reads
 # PLEK_SERVICE_CONTENT_STORE_URI (never PLEK_SERVICE_DRAFT_CONTENT_STORE_URI).
 #
-# `full_stack_only: true` marks an app that's only started as a dependency
-# when a preview asks for the full stack (Preview#full_stack) - e.g. the
-# Content Stores and Frontends, which are only needed to see published or
-# draft pages. Never for something a previewed app interacts with
-# directly - e.g. Publishing API, whose responses (validation errors and
-# all) are part of what a Whitehall preview is for. In the default, lighter core stack, the app that would have
-# used it is pointed at a stub that accepts and discards everything instead
-# (kubernetes/previews/sink.yaml). Has no effect on a top-level preview of
-# that app.
+# `full_stack_dependencies` are like `dependencies`, but only started when a
+# preview asks for its full stack (Preview#full_stack) - built after this
+# app's `dependencies`, in order. They're for seeing an app's output end to
+# end (e.g. Whitehall's Frontends, to view published and draft pages; or
+# Publishing API's Content Stores), never for something the app interacts
+# with directly: e.g. Publishing API is always one of Whitehall's
+# `dependencies`, since its responses (validation errors and all) are part
+# of what a Whitehall preview is for. An app's full stack is therefore its
+# own: a future Collections Publisher's would be its Collections apps plus
+# Publishing API's Content Stores - no Frontend. In a core stack, the app
+# that would have used a left-out dependency is pointed at a stand-in that
+# accepts and discards everything instead (kubernetes/previews/sink.yaml).
 #
 # `resync_tasks` names `bin/rails` tasks to run when a running preview is
 # switched to the full stack - e.g. re-sending everything Publishing API
 # holds to the Content Stores that have just been added.
 
 frontend:
-  full_stack_only: true
   repo_url: https://github.com/alphagov/frontend.git
   port_env_var: PORT
   publicly_readable: true
@@ -74,7 +76,6 @@ frontend:
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
 
 draft-frontend:
-  full_stack_only: true
   repo_url: https://github.com/alphagov/frontend.git
   port_env_var: PORT
   publicly_readable: true
@@ -88,7 +89,6 @@ draft-frontend:
     PLEK_HOSTNAME_PREFIX: "draft-"
 
 content-store:
-  full_stack_only: true
   repo_url: https://github.com/alphagov/content-store.git
   port_env_var: PORT
   database:
@@ -97,7 +97,6 @@ content-store:
   publicly_readable: true
 
 draft-content-store:
-  full_stack_only: true
   repo_url: https://github.com/alphagov/content-store.git
   port_env_var: PORT
   database:
@@ -111,7 +110,7 @@ publishing-api:
   database:
     adapter: postgresql
     image: postgres:17
-  dependencies:
+  full_stack_dependencies:
     - content-store
     - draft-content-store
   worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
@@ -132,6 +131,7 @@ whitehall:
     image: mysql:8
   dependencies:
     - publishing-api
+  full_stack_dependencies:
     - frontend
     - draft-frontend
   setup_tasks:

@@ -140,6 +140,13 @@ RSpec.describe Preview do
     end
   end
 
+  describe "#full_stack" do
+    it "is ignored for an app whose full stack is no different from its core one" do
+      expect(create(:preview, app_name: "frontend", full_stack: true).full_stack).to be(false)
+      expect(create(:preview, app_name: "whitehall", full_stack: true).full_stack).to be(true)
+    end
+  end
+
   describe "#url" do
     it "combines the configured scheme with the hostname" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch")

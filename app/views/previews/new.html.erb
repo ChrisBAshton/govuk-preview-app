@@ -21,13 +21,20 @@
     </p>
 
     <%= form_with url: previews_path, method: :post do %>
-      <%= render "govuk_publishing_components/components/select", {
+      <%= render "govuk_publishing_components/components/radio", {
         id: "preview_app_name",
         name: "preview[app_name]",
-        label: "Application",
+        heading: "Application",
         heading_size: "s",
         error_message: @preview.errors[:app_name].first,
-        options: GovukApps.app_names.map { |name| { text: name, value: name, selected: @preview.app_name == name } },
+        items: GovukApps.app_names.map { |name|
+          {
+            value: name,
+            text: name,
+            checked: @preview.app_name == name,
+            conditional: (full_stack_checkbox(name, checked: @preview.app_name == name && @preview.full_stack?) if GovukApps.full_stack_option?(name)),
+          }.compact
+        },
       } %>
 
       <%= render "govuk_publishing_components/components/input", {
@@ -40,23 +47,7 @@
         value: @preview.branch,
       } %>
 
-      <%= render "govuk_publishing_components/components/checkboxes", {
-      name: "preview[full_stack]",
-      heading: "Stack",
-      heading_size: "s",
-      no_hint_text: true,
-      items: [
-        {
-          label: "Full stack",
-          value: "true",
-          checked: @preview.full_stack?,
-          hint: "Also runs Content Store, draft Content Store, Frontend and draft Frontend, so published and draft " \
-                "pages can be viewed - roughly twice the memory. Can be added or removed later.",
-        },
-      ],
-    } %>
-
-    <%= render "govuk_publishing_components/components/button", text: "Create preview" %>
+      <%= render "govuk_publishing_components/components/button", text: "Create preview" %>
     <% end %>
   </div>
 </div>

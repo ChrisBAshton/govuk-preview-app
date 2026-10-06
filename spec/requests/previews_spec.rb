@@ -93,6 +93,18 @@ RSpec.describe "Previews" do
       expect(response).to have_http_status(:ok)
     end
 
+    it "offers the applications as radio buttons, revealing a full stack box only for apps that have one" do
+      get new_preview_path
+
+      page = Capybara::Node::Simple.new(response.body)
+      expect(page.all("input[type=radio][name='preview[app_name]']").map(&:value)).to eq(GovukApps.app_names)
+      expect(page.all("input[type=checkbox]").map { |box| box[:name] }).to contain_exactly(
+        "preview[full_stack_for][whitehall]", "preview[full_stack_for][publishing-api]"
+      )
+      expect(page.find("#preview_full_stack_whitehall").text).to include("content-store, draft-content-store, frontend, and draft-frontend")
+      expect(page.find("#preview_full_stack_publishing_api").text).not_to include("frontend")
+    end
+
     it "only mentions local images when they're enabled" do
       get new_preview_path
       expect(response.body).not_to include("bin/preview-build")
@@ -152,12 +164,16 @@ RSpec.describe "Previews" do
       expect(PreviewsResizeJob.jobs.last["args"].first(2)).to eq([preview.id, true])
     end
 
-    it "creates a core stack unless the full stack is ticked" do
+    it "creates a core stack unless the chosen app's full stack box is ticked" do
       post previews_path, params: { preview: { app_name: "whitehall", branch: "core-branch" } }
-      post previews_path, params: { preview: { app_name: "whitehall", branch: "full-branch", full_stack: "true" } }
+      post previews_path, params: { preview: { app_name: "whitehall", branch: "full-branch", full_stack_for: { "whitehall" => "true" } } }
+      # Ticked under Whitehall, then Publishing API chosen instead - the
+      # (now hidden) Whitehall box doesn't count.
+      post previews_path, params: { preview: { app_name: "publishing-api", branch: "switched", full_stack_for: { "whitehall" => "true" } } }
 
       expect(Preview.find_by(branch: "core-branch").full_stack).to be(false)
       expect(Preview.find_by(branch: "full-branch").full_stack).to be(true)
+      expect(Preview.find_by(branch: "switched").full_stack).to be(false)
     end
 
     it "offers adding or removing the full stack only for running apps that have one" do
