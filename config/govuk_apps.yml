@@ -194,3 +194,11 @@ finder-frontend:
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
     PLEK_SERVICE_SEARCH_API_URI: https://www.gov.uk/api
     PLEK_SERVICE_WHITEHALL_FRONTEND_URI: https://www.gov.uk
+
+smart-answers:
+  repo_url: https://github.com/alphagov/smart-answers.git
+  port_env_var: PORT
+  env:
+    GOVUK_APP_DOMAIN: www.gov.uk
+    GOVUK_WEBSITE_ROOT: https://www.gov.uk
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
