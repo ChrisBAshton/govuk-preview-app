@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps
+---
+# Matches integration's (govuk-infrastructure cluster-access/namespaces.tf):
+# any pod that isn't non-root, unprivileged and locked down is rejected.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: previews
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

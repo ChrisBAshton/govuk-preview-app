@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Creates the local kind cluster (if it doesn't already exist), then builds
+# and deploys Preview App into it - see README.md.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+CLUSTER=govuk-preview-app
+
+if ! command -v kind >/dev/null; then
+  echo "kind isn't installed - see README.md (brew install kind)" >&2
+  exit 1
+fi
+
+if ! kind get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
+  kind create cluster --name "$CLUSTER" --config kubernetes/local/kind-config.yaml
+fi
+
+exec bin/kind-deploy

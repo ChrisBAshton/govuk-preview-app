@@ -1,0 +1,12 @@
+# The whole local setup, applied by bin/kind-deploy: the same previews
+# namespace objects integration uses (../previews), plus Preview App itself
+# and its own Postgres/Redis in the `apps` namespace - the same layout as
+# integration, where Preview App is a normal app in `apps`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespaces.yaml
+  - ../previews
+  - preview-app.yaml
+  - postgres.yaml
+  - redis.yaml

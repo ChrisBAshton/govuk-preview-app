@@ -1,8 +1,9 @@
 class Preview < ApplicationRecord
   enum :status, {
     queued: "queued",
-    checking_out: "checking_out",
-    building: "building",
+    # Waiting for the branch's image to be pushed by its own GitHub Actions
+    # workflow (see ImageResolver).
+    waiting_for_image: "waiting_for_image",
     starting: "starting",
     running: "running",
     stopping: "stopping",
@@ -10,9 +11,9 @@ class Preview < ApplicationRecord
   }, default: :queued
 
   belongs_to :parent, class_name: "Preview", optional: true
-  # No `dependent: :destroy` - a dependency preview owns a container/DB/
-  # checkout that an AR callback can't clean up. PreviewDestroyer stops
-  # those explicitly before destroying the row.
+  # No `dependent: :destroy` - a dependency preview owns Kubernetes objects
+  # (and maybe a database volume) that an AR callback can't clean up.
+  # PreviewDestroyer deletes those explicitly before destroying the row.
   has_many :dependents, class_name: "Preview", foreign_key: :parent_id, inverse_of: :parent
 
   validates :app_name, presence: true, inclusion: { in: -> { GovukApps.app_names } }
@@ -26,18 +27,17 @@ class Preview < ApplicationRecord
     ENV.fetch("PREVIEW_APP_BASE_DOMAIN", "govuk-preview-app.dev.gov.uk")
   end
 
-  # http locally (no TLS in front of nginx here); integration will run with
-  # PREVIEW_APP_SCHEME=https once there's a real Ingress/ACM cert in front.
+  # http locally (nothing terminates TLS in the kind cluster); integration
+  # runs with PREVIEW_APP_SCHEME=https behind its real load balancer.
   def self.scheme
     ENV.fetch("PREVIEW_APP_SCHEME", "http")
   end
 
-  # Same env var nginx's own port mapping uses (docker-compose.yml) - kept
-  # in sync so links rendered here are directly clickable locally, while
-  # staying blank for a real deployment (fronted by a real Ingress on the
-  # standard ports, no override needed).
+  # The host port the local kind cluster exposes Preview App on (see
+  # kubernetes/local/kind-config.yaml) - so links rendered here are directly
+  # clickable locally, while staying blank on integration (standard ports).
   def self.external_port
-    ENV["PREVIEW_APP_NGINX_PORT"]
+    ENV["PREVIEW_APP_EXTERNAL_PORT"]
   end
 
   # Whether this preview's app is allowed to be hostname-routable even when

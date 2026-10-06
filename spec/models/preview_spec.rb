@@ -147,10 +147,10 @@ RSpec.describe Preview do
       expect(preview.url).to eq("http://frontend-my-branch.govuk-preview-app.dev.gov.uk")
     end
 
-    it "appends the external port when PREVIEW_APP_NGINX_PORT is set" do
+    it "appends the external port when PREVIEW_APP_EXTERNAL_PORT is set" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch")
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("PREVIEW_APP_NGINX_PORT").and_return("8080")
+      allow(ENV).to receive(:[]).with("PREVIEW_APP_EXTERNAL_PORT").and_return("8080")
 
       expect(preview.url).to eq("http://frontend-my-branch.govuk-preview-app.dev.gov.uk:8080")
     end

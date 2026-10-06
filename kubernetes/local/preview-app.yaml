@@ -1,0 +1,127 @@
+# Preview App itself, in the `apps` namespace like on integration (where
+# it's a normal generic-govuk-app deployment instead). Its service account
+# is what the Role in ../previews/role.yaml is bound to.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: govuk-preview-app
+  namespace: apps
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: govuk-preview-app-env
+  namespace: apps
+data:
+  DATABASE_URL: postgres://postgres@postgres/govuk_preview_app
+  REDIS_URL: redis://redis:6379
+  GOVUK_APP_DOMAIN: dev.gov.uk
+  GOVUK_APP_DOMAIN_EXTERNAL: dev.gov.uk
+  # gds-sso's own escape hatch: the image runs with RAILS_ENV=production,
+  # which would otherwise mean real Signon.
+  GDS_SSO_STRATEGY: mock
+  # Not a real secret - fixed so cookies survive a pod restart locally.
+  SECRET_KEY_BASE: 7ede6f11e4d21043e035b427884d36bcd4afe0bd7e5fa1eb77ad66349c2a7c01
+  PREVIEW_APP_BASE_DOMAIN: govuk-preview-app.dev.gov.uk
+  # Matches kind-config.yaml's host port, so rendered preview links work.
+  PREVIEW_APP_EXTERNAL_PORT: "8080"
+  PREVIEW_APP_KUBERNETES_NAMESPACE: previews
+---
+# A NodePort, not an Ingress: Preview App does its own Host-header routing
+# (HostRouter), so there's nothing for an ingress controller to add
+# locally. kind-config.yaml maps this node port to 127.0.0.1:8080.
+apiVersion: v1
+kind: Service
+metadata:
+  name: govuk-preview-app
+  namespace: apps
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: govuk-preview-app
+    app.kubernetes.io/component: app
+  ports:
+    - port: 80
+      targetPort: 3000
+      nodePort: 30080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: govuk-preview-app
+  namespace: apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: govuk-preview-app
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        # These two are what ../previews/network-policies.yaml lets into the
+        # previews namespace - the same labels generic-govuk-app gives the
+        # web pod on integration.
+        app.kubernetes.io/name: govuk-preview-app
+        app.kubernetes.io/component: app
+    spec:
+      serviceAccountName: govuk-preview-app
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+      containers:
+        - name: app
+          # Built and loaded into the cluster by bin/kind-deploy.
+          image: govuk-preview-app:dev
+          imagePullPolicy: Never
+          command:
+            - bash
+            - -c
+            - bin/rails db:prepare && bin/rails db:seed && bin/rails previews:reconcile && exec bundle exec puma
+          envFrom:
+            - configMapRef:
+                name: govuk-preview-app-env
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /up
+              port: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: govuk-preview-app-worker
+  namespace: apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: govuk-preview-app
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: govuk-preview-app
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: govuk-preview-app
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+      containers:
+        - name: worker
+          image: govuk-preview-app:dev
+          imagePullPolicy: Never
+          # Waits for the web pod's db:prepare on a fresh database, rather
+          # than racing it.
+          command:
+            - bash
+            - -c
+            - >-
+              until bin/rails runner 'exit(ActiveRecord::Base.connection.table_exists?(:previews) ? 0 : 1)' 2>/dev/null; do sleep 3; done
+              && bin/rails previews:reconcile
+              && exec bundle exec sidekiq -C ./config/sidekiq.yml
+          envFrom:
+            - configMapRef:
+                name: govuk-preview-app-env

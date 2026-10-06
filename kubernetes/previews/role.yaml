@@ -1,0 +1,35 @@
+# What Preview App's own service account (apps:govuk-preview-app) may do -
+# only in the previews namespace, and only to the kinds of object
+# KubernetesRunner/KubernetesDatabaseRunner create. Deliberately no access
+# to Secrets (there are none here anyway), and nothing cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: govuk-preview-app
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  # Read-only: to find a failed Job's pod and read its logs.
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: govuk-preview-app
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: govuk-preview-app
+subjects:
+  - kind: ServiceAccount
+    name: govuk-preview-app
+    namespace: apps

@@ -1,0 +1,16 @@
+# A single-node local cluster for Preview App - see bin/kind-up.
+#
+# Preview App is exposed on the host at 127.0.0.1:8080 rather than port 80:
+# govuk-docker's own nginx-proxy already binds port 80 on most GOV.UK dev
+# machines, and only one process can hold a given host port, so both can
+# run side by side this way.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Preview App's NodePort Service (see preview-app.yaml)
+      - containerPort: 30080
+        hostPort: 8080
+        listenAddress: 127.0.0.1
+        protocol: TCP

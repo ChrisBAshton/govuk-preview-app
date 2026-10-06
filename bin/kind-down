@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Deletes the local kind cluster, and with it every preview and Preview
+# App's own database.
+set -euo pipefail
+kind delete cluster --name govuk-preview-app

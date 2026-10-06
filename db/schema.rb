@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_05_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_05_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -19,7 +19,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_110000) do
     t.string "branch", null: false
     t.string "slug", null: false
     t.string "status", default: "queued", null: false
-    t.integer "port"
     t.string "container_id"
     t.string "status_message"
     t.datetime "created_at", null: false
@@ -27,7 +26,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_110000) do
     t.bigint "parent_id"
     t.string "public_hostname"
     t.index ["parent_id"], name: "index_previews_on_parent_id"
-    t.index ["port"], name: "index_previews_on_port", unique: true
     t.index ["public_hostname"], name: "index_previews_on_public_hostname", unique: true
     t.index ["slug"], name: "index_previews_on_slug", unique: true
   end

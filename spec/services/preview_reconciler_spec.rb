@@ -1,17 +1,14 @@
 require "rails_helper"
 
 RSpec.describe PreviewReconciler do
-  let(:success) { instance_double(Process::Status, success?: true) }
-  let(:failure) { instance_double(Process::Status, success?: false) }
-
   before do
-    allow(DockerRunner).to receive(:daemon_reachable?).and_return(true)
+    allow(KubernetesRunner).to receive(:api_reachable?).and_return(true)
   end
 
   describe ".run!" do
     it "leaves a genuinely running preview (no database) alone" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
-      allow(DockerRunner).to receive(:new).with(preview).and_return(instance_double(DockerRunner, exists?: true))
+      allow(KubernetesRunner).to receive(:new).with(preview).and_return(instance_double(KubernetesRunner, exists?: true))
 
       described_class.run!
 
@@ -20,57 +17,57 @@ RSpec.describe PreviewReconciler do
 
     it "leaves a genuinely running preview with a database alone" do
       preview = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running)
-      allow(DockerRunner).to receive(:new).with(preview).and_return(instance_double(DockerRunner, exists?: true))
-      allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, exists?: true))
+      allow(KubernetesRunner).to receive(:new).with(preview).and_return(instance_double(KubernetesRunner, exists?: true))
+      allow(KubernetesDatabaseRunner).to receive(:new).and_return(instance_double(KubernetesDatabaseRunner, exists?: true))
 
       described_class.run!
 
       expect(preview.reload.status).to eq("running")
     end
 
-    it "marks a preview failed when its app container is gone" do
+    it "marks a preview failed when its app deployment is gone" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
-      allow(DockerRunner).to receive(:new).with(preview).and_return(instance_double(DockerRunner, exists?: false))
+      allow(KubernetesRunner).to receive(:new).with(preview).and_return(instance_double(KubernetesRunner, exists?: false))
 
       described_class.run!
 
-      expect(preview.reload).to have_attributes(status: "failed", status_message: /app container/)
+      expect(preview.reload).to have_attributes(status: "failed", status_message: /app deployment/)
     end
 
-    it "marks a preview failed when only its database container is gone" do
+    it "marks a preview failed when only its database is gone" do
       preview = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running)
-      allow(DockerRunner).to receive(:new).with(preview).and_return(instance_double(DockerRunner, exists?: true))
-      allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, exists?: false))
+      allow(KubernetesRunner).to receive(:new).with(preview).and_return(instance_double(KubernetesRunner, exists?: true))
+      allow(KubernetesDatabaseRunner).to receive(:new).and_return(instance_double(KubernetesDatabaseRunner, exists?: false))
 
       described_class.run!
 
-      expect(preview.reload).to have_attributes(status: "failed", status_message: /database container/)
-      expect(preview.status_message).not_to include("app container")
+      expect(preview.reload).to have_attributes(status: "failed", status_message: /database/)
+      expect(preview.status_message).not_to include("app deployment")
     end
 
     it "reconciles a dependent preview the same way as a top-level one" do
       parent = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running)
       dependent = create(:preview, app_name: "publishing-api", branch: "main", parent: parent, status: :running)
-      allow(DockerRunner).to receive(:new) do |p|
-        instance_double(DockerRunner, exists?: p != dependent)
+      allow(KubernetesRunner).to receive(:new) do |p|
+        instance_double(KubernetesRunner, exists?: p != dependent)
       end
-      allow(DatabaseRunner).to receive(:new).and_return(instance_double(DatabaseRunner, exists?: true))
+      allow(KubernetesDatabaseRunner).to receive(:new).and_return(instance_double(KubernetesDatabaseRunner, exists?: true))
 
       described_class.run!
 
       expect(parent.reload.status).to eq("running")
-      expect(dependent.reload).to have_attributes(status: "failed", status_message: /app container/)
+      expect(dependent.reload).to have_attributes(status: "failed", status_message: /app deployment/)
     end
 
-    it "does nothing at all when the Docker daemon is unreachable" do
+    it "does nothing at all when the Kubernetes API is unreachable" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
-      allow(DockerRunner).to receive(:daemon_reachable?).and_return(false)
-      allow(DockerRunner).to receive(:new)
+      allow(KubernetesRunner).to receive(:api_reachable?).and_return(false)
+      allow(KubernetesRunner).to receive(:new)
 
       described_class.run!
 
       expect(preview.reload.status).to eq("running")
-      expect(DockerRunner).not_to have_received(:new)
+      expect(KubernetesRunner).not_to have_received(:new)
     end
   end
 end
