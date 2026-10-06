@@ -43,13 +43,16 @@
 # APIs. Has no effect on a preview with no parent (a standalone top-level
 # preview already gets a perfectly good, readable hostname from its slug).
 #
-# `env_aliases` re-exposes one of this app's own *inherited* dependency
-# addresses under a different env var key, for its own pods only (not
-# propagated to siblings/the parent) - see PreviewBuilder#build!. Needed
-# when an app's own code always reads a fixed env var name regardless of
-# which physical instance it's actually talking to - e.g. draft-frontend is
-# the exact same codebase as frontend, which only ever reads
-# PLEK_SERVICE_CONTENT_STORE_URI (never PLEK_SERVICE_DRAFT_CONTENT_STORE_URI).
+# `env_aliases` re-exposes one of the dependency addresses this app has
+# been given, inherited or its own, under a different env var key, for its
+# own pods only (not propagated to siblings/the parent) - see
+# PreviewBuilder#build!. Only applied when that address exists - e.g. only
+# in a full stack, for full-stack dependencies. Needed when an app's own
+# code reads a fixed env var name, whichever instance it should talk to:
+# e.g. draft-frontend is the same codebase as frontend, which only ever
+# reads PLEK_SERVICE_CONTENT_STORE_URI (never the draft one); and
+# Whitehall builds its "View on website"/"Preview on website" links from
+# GOVUK_WEBSITE_ROOT and PLEK_SERVICE_DRAFT_ORIGIN_URI.
 #
 # `full_stack_dependencies` are like `dependencies`, but only started when a
 # preview asks for its full stack (Preview#full_stack) - built after this
@@ -172,6 +175,12 @@ whitehall:
   full_stack_dependencies:
     - frontend
     - draft-frontend
+  # In a full stack, link "View on website"/"Preview on website" (and every
+  # other public link Whitehall builds) to this preview's own Frontends.
+  # Otherwise they stay pointing at the real integration site.
+  env_aliases:
+    GOVUK_WEBSITE_ROOT: PLEK_SERVICE_FRONTEND_PUBLIC_URL
+    PLEK_SERVICE_DRAFT_ORIGIN_URI: PLEK_SERVICE_DRAFT_FRONTEND_PUBLIC_URL
   setup_tasks:
     - taxonomy:populate_end_to_end_test_data
     - taxonomy:rebuild_cache

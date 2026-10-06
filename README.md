@@ -43,6 +43,8 @@ By default a preview runs its *core* stack: the app and only the dependencies it
 
 In a core stack, an app that would have used a left-out dependency is pointed at a shared stand-in instead (`kubernetes/previews/sink.yaml`), which accepts and discards everything - e.g. Publishing API, which has no setting to stop it pushing content to its Content Stores. That address is only given to the app that needs it, so e.g. Whitehall still reads the real GOV.UK Content Store, as before.
 
+An app whose full stack includes its own Frontends can link to them too: e.g. Whitehall's "View on website" and "Preview on website" links (and every other public link it builds) point at its preview's Frontend and draft Frontend in a full stack, via `env_aliases` setting `GOVUK_WEBSITE_ROOT` and `PLEK_SERVICE_DRAFT_ORIGIN_URI`, and at the real integration site otherwise. Every preview runs with `GOVUK_ENVIRONMENT=integration`, which is how apps should tell which environment they're in.
+
 A running preview can be switched between the two from the previews page (`PreviewResizer`). Nothing already running is rebuilt or loses data: the extra apps are added (or removed), and anything whose dependency addresses change is restarted with the new ones (`PreviewBuilder#reconfigure!`). On adding the full stack, Publishing API then re-sends everything it holds to the new Content Stores (`resync_tasks` in the manifest).
 
 ### Routing
