@@ -71,6 +71,30 @@ RSpec.describe HostRouter do
     )
   end
 
+  describe "a publicly_readable dependency with public_paths" do
+    let(:parent) { create(:preview, app_name: "whitehall", branch: "my-branch", status: :running) }
+    let(:dependent) { create(:preview, app_name: "asset-manager", branch: "main", parent: parent, status: :running) }
+    let(:proxy) { instance_double(Rack::Proxy, call: [200, {}, %w[proxied]]) }
+
+    before { allow(Rack::Proxy).to receive(:new).and_return(proxy) }
+
+    it "proxies reading those paths" do
+      described_class.new(app).call(env_for(dependent.hostname, path: "/media/abc/image.jpg"))
+
+      expect(proxy).to have_received(:call)
+    end
+
+    it "refuses any other path, or any request that would change something" do
+      router = described_class.new(app)
+
+      get_status, = router.call(env_for(dependent.hostname, path: "/assets/abc"))
+      post_status, = router.call(Rack::MockRequest.env_for("http://#{dependent.hostname}/media/abc/image.jpg", method: "POST"))
+
+      expect([get_status, post_status]).to eq([404, 404])
+      expect(proxy).not_to have_received(:call)
+    end
+  end
+
   it "does not proxy a publicly_readable dependency preview by its real (internal) slug" do
     parent = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running)
     dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent, status: :running)

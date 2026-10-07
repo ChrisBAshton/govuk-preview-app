@@ -2,6 +2,11 @@
 # its optional worker as a second Deployment from the same image, and its
 # one-off rake tasks (migrate/seed/setup_tasks) as Jobs.
 #
+# An app with `shared_volumes` (see config/govuk_apps.yml) runs its worker as
+# a second container in the web pod instead, so the two can share files -
+# e.g. Whitehall's web process saves an upload that its worker then sends to
+# Asset Manager.
+#
 # There's no build step: the image was already built and pushed by the
 # app's own GitHub Actions workflow, and found by ImageResolver. Nothing
 # here needs privileges - every pod runs as the image's own non-root user
@@ -128,6 +133,10 @@ class KubernetesRunner
   # `docker build` - mounted into every pod instead, since the image is
   # prebuilt and can't be modified.
   def prepare!
+    persistent_volumes.each_key do |volume|
+      api.apply(api.path("v1", "persistentvolumeclaims", claim_name(volume)), claim(volume))
+    end
+
     api.apply(
       api.path("v1", "configmaps", overrides_name),
       {
@@ -163,6 +172,13 @@ class KubernetesRunner
 
   def start_worker!(extra_env: {})
     require_image!
+
+    # Runs in the web pod instead (see #start!) - and a preview started
+    # before the app shared volumes may still have a Deployment of its own.
+    if worker_in_web_pod?
+      api.delete(api.path("apps/v1", "deployments", worker_container_name))
+      return
+    end
 
     api.apply(
       api.path("apps/v1", "deployments", worker_container_name),
@@ -206,6 +222,7 @@ class KubernetesRunner
     api.delete(api.path("v1", "services", container_name))
     api.delete(api.path("v1", "configmaps", overrides_name))
     api.delete(api.path("batch/v1", "jobs"), labelSelector: "govuk-preview-app/preview-id=#{preview.id}")
+    persistent_volumes.each_key { |volume| api.delete(api.path("v1", "persistentvolumeclaims", claim_name(volume))) }
   end
 
   # Sleeping (0) and waking (1) a preview - see PreviewSleeper. The
@@ -252,17 +269,47 @@ private
   end
 
   def worker_command
-    command = GovukApps.find(preview.app_name).worker_command
+    command = app.worker_command
     command.include?("sidekiq") ? [*command, "-c", WORKER_CONCURRENCY.to_s] : command
   end
 
   def memory
-    self.class.memory_for(GovukApps.find(preview.app_name))
+    self.class.memory_for(app)
   end
 
   def deployment_names
-    worker = GovukApps.find(preview.app_name).worker_command
+    worker = app.worker_command && !worker_in_web_pod?
     worker ? [container_name, worker_container_name] : [container_name]
+  end
+
+  def app
+    GovukApps.find(preview.app_name)
+  end
+
+  def worker_in_web_pod?
+    app.worker_command.present? && app.shared_volumes.present?
+  end
+
+  def persistent_volumes
+    app.shared_volumes.select { |_, volume| volume["persistent"] }
+  end
+
+  def claim_name(volume)
+    ContainerName.for(preview.slug, suffix: "-#{volume}")
+  end
+
+  # Only ever mounted by the one web pod (its Deployment's Recreate strategy
+  # stops the old pod first), so ReadWriteOnce is enough.
+  def claim(volume)
+    {
+      apiVersion: "v1",
+      kind: "PersistentVolumeClaim",
+      metadata: { name: claim_name(volume), labels: labels("storage") },
+      spec: {
+        accessModes: %w[ReadWriteOnce],
+        resources: { requests: { storage: app.shared_volumes[volume].fetch("size", "1Gi") } },
+      },
+    }
   end
 
   def labels(component)
@@ -296,35 +343,15 @@ private
         selector: { matchLabels: { "app.kubernetes.io/instance" => name } },
         template: {
           metadata: { labels: labels(component).merge("app.kubernetes.io/instance" => name) },
-          spec: pod_spec(env:, command:, web:),
+          spec: pod_spec(env:, command:, web:, with_worker: web && worker_in_web_pod?),
         },
       },
     }
   end
 
-  def pod_spec(env:, command: nil, web: false, restart_policy: "Always")
-    container = {
-      name: "app",
-      image: image,
-      # A local image (see ImageResolver) only exists on the kind node it
-      # was loaded onto - there's nowhere to pull it from.
-      imagePullPolicy: ImageResolver.local_image?(image) ? "Never" : "IfNotPresent",
-      env: PreviewEnv.for(preview, env, web:).map { |key, value| { name: key, value: value } },
-      resources: {
-        requests: {
-          cpu: ENV.fetch("PREVIEW_APP_POD_CPU_REQUEST", "50m"),
-          memory: memory[:request],
-        },
-        limits: { memory: memory[:limit] },
-      },
-      securityContext: self.class.container_security_context,
-      volumeMounts: [{ name: "overrides", mountPath: OVERRIDES_PATH, subPath: OVERRIDES_KEY, readOnly: true }],
-    }
-    container[:command] = command if command
-    if web
-      container[:ports] = [{ name: "http", containerPort: APP_PORT }]
-      container[:readinessProbe] = { tcpSocket: { port: APP_PORT }, periodSeconds: 5 }
-    end
+  def pod_spec(env:, command: nil, web: false, restart_policy: "Always", with_worker: false)
+    containers = [container("app", env:, command:, web:)]
+    containers << container("worker", env:, command: worker_command, shared_volumes: true) if with_worker
 
     {
       restartPolicy: restart_policy,
@@ -338,11 +365,52 @@ private
       securityContext: {
         runAsUser: APP_UID,
         runAsGroup: APP_UID,
+        # So the app can write to its volumes, whoever they were created as.
+        fsGroup: (APP_UID if web && app.shared_volumes.present?),
         seccompProfile: { type: "RuntimeDefault" },
-      },
-      containers: [container],
-      volumes: [{ name: "overrides", configMap: { name: overrides_name } }],
+      }.compact,
+      containers:,
+      volumes: [
+        { name: "overrides", configMap: { name: overrides_name } },
+        *(web ? shared_volume_sources : []),
+      ],
     }
+  end
+
+  def shared_volume_sources
+    app.shared_volumes.map do |volume, settings|
+      source = settings["persistent"] ? { persistentVolumeClaim: { claimName: claim_name(volume) } } : { emptyDir: {} }
+      { name: "shared-#{volume}", **source }
+    end
+  end
+
+  def container(name, env:, command: nil, web: false, shared_volumes: web)
+    container = {
+      name:,
+      image: image,
+      # A local image (see ImageResolver) only exists on the kind node it
+      # was loaded onto - there's nowhere to pull it from.
+      imagePullPolicy: ImageResolver.local_image?(image) ? "Never" : "IfNotPresent",
+      env: PreviewEnv.for(preview, env, web:).map { |key, value| { name: key, value: value } },
+      resources: {
+        requests: {
+          cpu: ENV.fetch("PREVIEW_APP_POD_CPU_REQUEST", "50m"),
+          memory: memory[:request],
+        },
+        limits: { memory: memory[:limit] },
+      },
+      securityContext: self.class.container_security_context,
+      volumeMounts: [
+        { name: "overrides", mountPath: OVERRIDES_PATH, subPath: OVERRIDES_KEY, readOnly: true },
+        *(shared_volumes ? app.shared_volumes.map { |volume, settings| { name: "shared-#{volume}", mountPath: settings.fetch("path") } } : []),
+      ],
+    }
+    container[:command] = command if command
+    if web
+      container[:ports] = [{ name: "http", containerPort: APP_PORT }]
+      container[:readinessProbe] = { tcpSocket: { port: APP_PORT }, periodSeconds: 5 }
+    end
+    container
   end
 
   def run_job!(command, extra_env:)

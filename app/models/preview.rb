@@ -110,8 +110,17 @@ class Preview < ApplicationRecord
   end
 
   def url
-    port_suffix = self.class.external_port.presence && ":#{self.class.external_port}"
-    "#{self.class.scheme}://#{hostname}#{port_suffix}"
+    "#{self.class.scheme}://#{hostname}#{self.class.port_suffix}"
+  end
+
+  # Every preview's hostname at once, as a Content Security Policy source -
+  # see ConfigOverrides.
+  def self.csp_source
+    "#{scheme}://*.#{base_domain}#{port_suffix}"
+  end
+
+  def self.port_suffix
+    external_port.presence && ":#{external_port}"
   end
 
   # Truncates a parameterized slug to MAX_SLUG_LENGTH, appending a digest of

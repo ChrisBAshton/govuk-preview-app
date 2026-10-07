@@ -107,7 +107,7 @@ RSpec.describe "Previews" do
       expect(page.all("input[type=checkbox]").map { |box| box[:name] }).to contain_exactly(
         "preview[full_stack_for][whitehall]", "preview[full_stack_for][publishing-api]"
       )
-      expect(page.find("#preview_full_stack_whitehall").text).to include("content-store, draft-content-store, frontend, and draft-frontend")
+      expect(page.find("#preview_full_stack_whitehall").text).to include("content-store, draft-content-store, asset-manager, frontend, and draft-frontend")
       expect(page.find("#preview_full_stack_publishing_api").text).not_to include("frontend")
     end
 

@@ -70,9 +70,10 @@ RSpec.describe PreviewCapacity do
       # whitehall web + worker (288Mi each) + MySQL (224Mi), publishing-api
       # web + worker (288Mi each) + Postgres (48Mi), and Redis (32Mi)
       expect(core.send(:stack_needs)["requests.memory"]).to eq((288 * 2) + 224 + (288 * 2) + 48 + 32)
-      # ...plus two Content Stores (160Mi each, each with a 48Mi Postgres)
-      # and two Frontends (176Mi each)
-      expect(full.send(:stack_needs)["requests.memory"]).to eq(1456 + ((160 + 48) * 2) + (176 * 2))
+      # ...plus two Content Stores (160Mi each, each with a 48Mi Postgres),
+      # Asset Manager web + worker (176Mi each) + MongoDB (112Mi), and two
+      # Frontends (176Mi each)
+      expect(full.send(:stack_needs)["requests.memory"]).to eq(1456 + ((160 + 48) * 2) + (176 * 2) + 112 + (176 * 2))
     end
   end
 

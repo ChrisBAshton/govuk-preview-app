@@ -18,6 +18,7 @@ class HostRouter
   def call(env)
     preview = matching_preview(env)
     return @app.call(env) unless preview
+    return not_found unless publicly_allowed?(preview, env)
 
     # A visit is an interaction - including one to a sleeping preview, which
     # wakes it.
@@ -49,6 +50,22 @@ private
     # public URL never has to expose which parent it actually belongs to.
     routable = Preview.where(status: ROUTABLE_STATUSES)
     routable.where(parent_id: nil).find_by(slug: prefix) || routable.find_by(public_hostname: prefix)
+  end
+
+  # A publicly readable dependency with `public_paths` (see
+  # config/govuk_apps.yml) is only reachable for reading those paths - e.g.
+  # Asset Manager serves assets to browsers, but its API, which changes
+  # things, must only be reachable from inside the cluster.
+  def publicly_allowed?(preview, env)
+    paths = GovukApps.find(preview.app_name)&.public_paths
+    return true if preview.parent_id.nil? || paths.nil?
+
+    request = Rack::Request.new(env)
+    (request.get? || request.head?) && paths.any? { |path| request.path.start_with?(path) }
+  end
+
+  def not_found
+    [404, { "content-type" => "text/plain; charset=utf-8" }, ["Not found"]]
   end
 
   def waking_up(root)
