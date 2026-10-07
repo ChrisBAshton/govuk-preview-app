@@ -1,6 +1,18 @@
 require "rails_helper"
 
 RSpec.describe PreviewsHelper do
+  describe "#preview_actions" do
+    it "offers only deleting a preview of an app no longer in the manifest" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :failed)
+      preview.update_column(:app_name, "removed-app")
+
+      html = helper.preview_actions(preview)
+
+      expect(html).to include("Delete")
+      expect(html).not_to include("Retry", "Wake", "Sleep")
+    end
+  end
+
   describe "#previews_with_dependencies" do
     it "lists a top-level preview on its own when it has no dependencies" do
       previews = [create(:preview, app_name: "frontend", branch: "my-branch")]

@@ -6,6 +6,17 @@ RSpec.describe PreviewReconciler do
   end
 
   describe ".run!" do
+    it "marks a preview of an app no longer in the manifest failed, without looking for its infrastructure" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+      preview.update_column(:app_name, "removed-app")
+      allow(KubernetesRunner).to receive(:new)
+
+      described_class.run!
+
+      expect(preview.reload).to have_attributes(status: "failed", status_message: /removed-app is no longer a previewable app/)
+      expect(KubernetesRunner).not_to have_received(:new)
+    end
+
     it "leaves a genuinely running preview (no database) alone" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
       allow(KubernetesRunner).to receive(:new).with(preview).and_return(instance_double(KubernetesRunner, exists?: true))

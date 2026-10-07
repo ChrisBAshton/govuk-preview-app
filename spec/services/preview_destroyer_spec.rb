@@ -6,6 +6,19 @@ RSpec.describe PreviewDestroyer do
   before { allow(StackRedis).to receive(:new).and_return(stack_redis) }
 
   describe "#destroy!" do
+    it "deletes any database of an app no longer in the manifest, as it can't tell whether there was one" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch")
+      preview.update_column(:app_name, "removed-app")
+      allow(KubernetesRunner).to receive(:new).with(preview).and_return(instance_double(KubernetesRunner, stop!: nil))
+      db = instance_double(KubernetesDatabaseRunner, stop!: nil)
+      allow(KubernetesDatabaseRunner).to receive(:new).with(preview, nil).and_return(db)
+
+      described_class.new(preview).destroy!
+
+      expect(db).to have_received(:stop!)
+      expect(Preview.exists?(preview.id)).to be false
+    end
+
     it "deletes the preview's Kubernetes objects and destroys the record" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch")
       runner = instance_double(KubernetesRunner, stop!: nil)
