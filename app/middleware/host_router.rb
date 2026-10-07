@@ -19,10 +19,12 @@ class HostRouter
     preview = matching_preview(env)
     return @app.call(env) unless preview
 
+    # A visit is an interaction - including one to a sleeping preview, which
+    # wakes it.
     root = preview.root
+    root.record_interaction!(throttle: true)
     return waking_up(root) unless preview.running?
 
-    root.record_access!
     env["rack.backend"] = "http://#{KubernetesRunner.new(preview).service_host}"
     @proxy.call(env)
   end

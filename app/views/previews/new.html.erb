@@ -27,7 +27,7 @@
         heading: "Application",
         heading_size: "s",
         error_message: @preview.errors[:app_name].first,
-        items: GovukApps.app_names.map { |name|
+        items: GovukApps.app_names.sort.map { |name|
           {
             value: name,
             text: name,

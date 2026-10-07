@@ -94,9 +94,9 @@ RSpec.describe PreviewCapacity do
     end
 
     it "sleeps the least recently used other previews until there's room" do
-      oldest = create(:preview, app_name: "whitehall", branch: "a", status: :running, last_accessed_at: 2.hours.ago)
-      never_visited = create(:preview, app_name: "frontend", branch: "b", status: :running, last_accessed_at: nil)
-      newer = create(:preview, app_name: "frontend", branch: "c", status: :running, last_accessed_at: 1.hour.ago)
+      oldest = create(:preview, app_name: "whitehall", branch: "a", status: :running, last_interacted_at: 2.hours.ago)
+      never_visited = create(:preview, app_name: "frontend", branch: "b", status: :running, last_interacted_at: nil)
+      newer = create(:preview, app_name: "frontend", branch: "c", status: :running, last_interacted_at: 1.hour.ago)
       stub_request(:get, k8s_url(quota_path)).to_return(
         json_response({ status: { hard: { "requests.memory" => "1Gi" }, used: { "requests.memory" => "1Gi" } } }),
         json_response({ status: { hard: { "requests.memory" => "1Gi" }, used: { "requests.memory" => "900Mi" } } }),
@@ -111,7 +111,7 @@ RSpec.describe PreviewCapacity do
     end
 
     it "never sleeps a preview used in the last 15 minutes, or one that isn't running, and says why it can't make room" do
-      create(:preview, app_name: "frontend", branch: "recent", status: :running, last_accessed_at: 5.minutes.ago)
+      create(:preview, app_name: "frontend", branch: "recent", status: :running, last_interacted_at: 5.minutes.ago)
       create(:preview, app_name: "frontend", branch: "building", status: :starting)
       stub_quota(requests_used: "1Gi")
 
