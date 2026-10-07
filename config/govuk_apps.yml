@@ -274,3 +274,15 @@ smart-answers:
     GOVUK_APP_DOMAIN: www.gov.uk
     GOVUK_WEBSITE_ROOT: https://www.gov.uk
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+
+# Mainstream Publisher. Not run alongside it (so those features won't work
+# in a preview): Link Checker API.
+publisher:
+  repo_url: https://github.com/alphagov/publisher.git
+  port_env_var: PORT
+  database:
+    adapter: postgresql
+    image: postgres:17
+  dependencies:
+    - publishing-api
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
