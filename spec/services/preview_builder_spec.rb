@@ -72,6 +72,8 @@ RSpec.describe PreviewBuilder do
         expect(runners[preview]).to have_received(:prepare!)
         expect(runners[preview]).to have_received(:start!).with(extra_env: {})
         expect(preview.reload).to have_attributes(status: "running", container_id: "deploy-uid")
+        # A build finishing isn't an interaction - only people's actions are.
+        expect(preview.last_interacted_at).to be_nil
       end
 
       it "marks the preview failed with the error message when its image never appears" do

@@ -16,6 +16,14 @@ RSpec.describe PreviewSleeper do
   end
 
   describe "#sleep!" do
+    it "doesn't count as an interaction - it's often automatic, to make room for another preview" do
+      root.update_column(:last_interacted_at, 2.hours.ago)
+
+      sleeper.sleep!
+
+      expect(root.reload.last_interacted_at).to be_within(1.second).of(2.hours.ago)
+    end
+
     it "scales every Deployment and database in the stack to zero, and marks the whole stack sleeping" do
       sleeper.sleep!
 
@@ -49,7 +57,9 @@ RSpec.describe PreviewSleeper do
       app_scales = scaled.index { |name, _| name == KubernetesRunner.new(root).container_name }
       expect(database_scales).to be < app_scales
       expect([root.reload.status, content_store.reload.status]).to eq(%w[running running])
-      expect(root.last_accessed_at).to be_within(1.minute).of(Time.current)
+      # Waking is automatic once asked for - the asking (a visit, or the Wake
+      # button) is what counts as an interaction.
+      expect(root.last_interacted_at).to be_nil
     end
 
     it "goes back to sleep, saying why, when there isn't room" do

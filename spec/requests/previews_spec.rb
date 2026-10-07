@@ -48,20 +48,20 @@ RSpec.describe "Previews" do
       expect(response.body).to include("Internal dependency")
     end
 
-    it "lists the most recently visited previews first, with never-visited ones last, newest first" do
-      never_older = create(:preview, app_name: "frontend", branch: "never-older", created_at: 2.days.ago)
-      never_newer = create(:preview, app_name: "frontend", branch: "never-newer", created_at: 1.day.ago)
-      visited_long_ago = create(:preview, app_name: "frontend", branch: "visited-long-ago", last_accessed_at: 3.hours.ago)
-      visited_recently = create(:preview, app_name: "frontend", branch: "visited-recently", last_accessed_at: 5.minutes.ago)
+    it "lists previews by their newest activity - whichever is more recent of being created and being visited" do
+      created_just_now = create(:preview, app_name: "frontend", branch: "created-just-now", created_at: 1.minute.ago)
+      visited_recently = create(:preview, app_name: "frontend", branch: "visited-recently", created_at: 3.days.ago, last_interacted_at: 5.minutes.ago)
+      created_yesterday = create(:preview, app_name: "frontend", branch: "created-yesterday", created_at: 1.day.ago)
+      visited_long_ago = create(:preview, app_name: "frontend", branch: "visited-long-ago", created_at: 5.days.ago, last_interacted_at: 2.days.ago)
 
       get previews_path
 
       branches = Capybara::Node::Simple.new(response.body).all("table tbody tr").map { |row| row.all("td")[1].text }
-      expect(branches).to eq([visited_recently, visited_long_ago, never_newer, never_older].map(&:branch))
+      expect(branches).to eq([created_just_now, visited_recently, created_yesterday, visited_long_ago].map(&:branch))
     end
 
     it "shows when each preview was created, and when its stack was last visited" do
-      create(:preview, app_name: "frontend", branch: "visited", created_at: 2.hours.ago, last_accessed_at: 5.minutes.ago)
+      create(:preview, app_name: "frontend", branch: "visited", created_at: 2.hours.ago, last_interacted_at: 5.minutes.ago)
       create(:preview, app_name: "frontend", branch: "unvisited")
 
       get previews_path
@@ -103,7 +103,7 @@ RSpec.describe "Previews" do
       get new_preview_path
 
       page = Capybara::Node::Simple.new(response.body)
-      expect(page.all("input[type=radio][name='preview[app_name]']").map(&:value)).to eq(GovukApps.app_names)
+      expect(page.all("input[type=radio][name='preview[app_name]']").map(&:value)).to eq(GovukApps.app_names.sort)
       expect(page.all("input[type=checkbox]").map { |box| box[:name] }).to contain_exactly(
         "preview[full_stack_for][whitehall]", "preview[full_stack_for][publishing-api]"
       )
@@ -210,6 +210,36 @@ RSpec.describe "Previews" do
         "sleeping-one" => %w[Wake Delete],
         "failed-one" => %w[Retry Delete],
       )
+    end
+  end
+
+  describe "recording interactions" do
+    it "counts creating a preview, and each action on one, as an interaction" do
+      post previews_path, params: { preview: { app_name: "frontend", branch: "new-branch" } }
+      expect(Preview.find_by(branch: "new-branch").last_interacted_at).to be_within(1.minute).of(Time.current)
+
+      { "running" => :sleep_preview_path, "sleeping" => :wake_preview_path, "failed" => :retry_preview_path }.each do |status, path|
+        preview = create(:preview, app_name: "whitehall", branch: "#{status}-branch", status:, last_interacted_at: 3.days.ago)
+
+        post send(path, preview)
+
+        expect(preview.reload.last_interacted_at).to be_within(1.minute).of(Time.current)
+      end
+
+      preview = create(:preview, app_name: "whitehall", branch: "resized", status: :running, last_interacted_at: 3.days.ago)
+      post resize_preview_path(preview, full_stack: true)
+      expect(preview.reload.last_interacted_at).to be_within(1.minute).of(Time.current)
+    end
+
+    it "puts a retried preview back at the top, even though it was created long before the others" do
+      old_failed = create(:preview, app_name: "frontend", branch: "old-failed", status: :failed, created_at: 2.days.ago)
+      create(:preview, app_name: "frontend", branch: "newer", created_at: 1.hour.ago, last_interacted_at: 1.hour.ago)
+
+      post retry_preview_path(old_failed)
+      get previews_path
+
+      first_row = Capybara::Node::Simple.new(response.body).first("table tbody tr")
+      expect(first_row.all("td")[1].text).to eq("old-failed")
     end
   end
 

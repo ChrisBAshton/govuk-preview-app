@@ -105,7 +105,7 @@ class PreviewBuilder
     container_id = runner.start!(extra_env: extra_env)
     runner.start_worker!(extra_env: extra_env) if app.worker_command
 
-    preview.update!(status: :running, container_id: container_id, last_accessed_at: Time.current, env_digest: digest(extra_env))
+    preview.update!(status: :running, container_id: container_id, env_digest: digest(extra_env))
 
     dependency_env
   rescue *RESCUED_ERRORS => e

@@ -86,13 +86,20 @@ class Preview < ApplicationRecord
     [self, *dependents.flat_map(&:tree)]
   end
 
-  # Called on every request HostRouter proxies to a preview - but only
-  # writes at most once a minute, since it's only used to decide which
-  # previews have gone unused the longest (see PreviewCapacity).
-  def record_access!
-    return if last_accessed_at.present? && last_accessed_at > 1.minute.ago
+  # When someone last did something with this preview: created, visited,
+  # retried, woke, put to sleep or changed its stack size. Only ever set by
+  # a person's action - never by anything automatic, like a build finishing
+  # or PreviewCapacity putting it to sleep to make room - so it says which
+  # previews people are actually using. The previews page lists them by it,
+  # newest first, and PreviewCapacity puts the least recently used to sleep
+  # first.
+  #
+  # throttle: visits (see HostRouter) happen on every request, so they only
+  # write at most once a minute.
+  def record_interaction!(throttle: false)
+    return if throttle && last_interacted_at.present? && last_interacted_at > 1.minute.ago
 
-    update_column(:last_accessed_at, Time.current)
+    update_column(:last_interacted_at, Time.current)
   end
 
   def url

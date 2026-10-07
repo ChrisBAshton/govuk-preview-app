@@ -48,7 +48,6 @@ class PreviewSleeper
     runners.each(&:wait_until_running!)
 
     Preview.where(id: previews.map(&:id)).update_all(status: "running", status_message: nil, updated_at: Time.current)
-    root.update_column(:last_accessed_at, Time.current)
   rescue *WAKE_ERRORS => e
     # Back to sleep rather than left half-awake, holding on to memory - with
     # the reason shown on the preview, and another visit tries again.

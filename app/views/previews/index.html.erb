@@ -11,7 +11,7 @@
     { text: "Status" },
     { text: "URL" },
     { text: "Created at" },
-    { text: "Last visited" },
+    { text: "Last interaction" },
     { text: "" },
   ],
   rows: previews_with_dependencies(@previews).map do |preview, dependency|
@@ -39,7 +39,7 @@
       { text: url_cell },
       { text: preview_time(preview.created_at) },
       # Visits are recorded against the whole stack, i.e. its top-level preview.
-      { text: preview.parent.blank? ? preview_time(preview.last_accessed_at, blank: "Never") : "" },
+      { text: preview.parent.blank? ? preview_time(preview.last_interacted_at, blank: "Never") : "" },
       { text: preview.parent.blank? ? preview_actions(preview) : "" },
     ]
   end,

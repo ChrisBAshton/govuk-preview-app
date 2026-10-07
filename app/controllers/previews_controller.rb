@@ -2,9 +2,11 @@ class PreviewsController < ApplicationController
   def index
     # Top-level only - the view nests each one's dependents (recursively)
     # beneath it via PreviewsHelper#previews_with_dependencies. Most recently
-    # visited first (see HostRouter); never-visited ones last, newest first.
+    # interacted with first (see Preview#record_interaction!) - or created,
+    # for a preview from before interactions were recorded (GREATEST ignores
+    # its NULL).
     @previews = Preview.where(parent_id: nil)
-      .order(Arel.sql("last_accessed_at DESC NULLS LAST, created_at DESC"))
+      .order(Arel.sql("GREATEST(created_at, last_interacted_at) DESC"))
   end
 
   def new
@@ -12,7 +14,7 @@ class PreviewsController < ApplicationController
   end
 
   def create
-    @preview = Preview.new(preview_params)
+    @preview = Preview.new(preview_params.merge(last_interacted_at: Time.current))
 
     if @preview.save
       PreviewsCreateJob.perform_async(@preview.id)
@@ -43,6 +45,7 @@ class PreviewsController < ApplicationController
   # Frees its memory for other previews - see PreviewSleeper.
   def put_to_sleep
     preview = Preview.find(params[:id])
+    preview.record_interaction!
     PreviewsSleepJob.perform_async(preview.id) if preview.running?
 
     redirect_to previews_path, notice: "Preview of #{preview.app_name} (#{preview.branch}) is going to sleep."
@@ -50,6 +53,7 @@ class PreviewsController < ApplicationController
 
   def wake
     preview = Preview.find(params[:id])
+    preview.record_interaction!
     if Preview.where(id: preview.id, status: :sleeping).update_all(status: "waking", updated_at: Time.current) == 1
       PreviewsWakeJob.perform_async(preview.id)
     end
@@ -61,6 +65,7 @@ class PreviewsController < ApplicationController
   # PreviewResizer.
   def resize
     preview = Preview.find(params[:id])
+    preview.record_interaction!
     full_stack = params[:full_stack] == "true"
     PreviewsResizeJob.perform_async(preview.id, full_stack) if preview.running? && preview.parent.blank?
 
@@ -72,6 +77,7 @@ class PreviewsController < ApplicationController
   # PreviewBuilder#build!).
   def retry_build
     preview = Preview.find(params[:id])
+    preview.record_interaction!
     if preview.failed?
       preview.update!(status: :queued, status_message: nil)
       PreviewsCreateJob.perform_async(preview.id)

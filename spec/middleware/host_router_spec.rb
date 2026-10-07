@@ -92,6 +92,14 @@ RSpec.describe HostRouter do
       expect(preview.reload.status).to eq("waking")
     end
 
+    it "counts visiting a sleeping preview as an interaction" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :sleeping, last_interacted_at: 2.days.ago)
+
+      router.call(env_for(preview.hostname))
+
+      expect(preview.reload.last_interacted_at).to be_within(1.minute).of(Time.current)
+    end
+
     it "wakes the whole stack when a sleeping dependency's public hostname is visited" do
       parent = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :sleeping)
       dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent, status: :sleeping)
@@ -117,6 +125,6 @@ RSpec.describe HostRouter do
 
     described_class.new(app).call(env_for(preview.hostname))
 
-    expect(preview.reload.last_accessed_at).to be_within(1.minute).of(Time.current)
+    expect(preview.reload.last_interacted_at).to be_within(1.minute).of(Time.current)
   end
 end

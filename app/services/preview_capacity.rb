@@ -122,7 +122,7 @@ private
   # predate tracking visits) count as least recently used of all.
   def sleep_candidates
     Preview.where(parent_id: nil, status: :running).where.not(id: root.id)
-      .where("last_accessed_at IS NULL OR last_accessed_at < ?", RECENTLY_USED.ago)
-      .order(Arel.sql("last_accessed_at ASC NULLS FIRST, id ASC"))
+      .where("last_interacted_at IS NULL OR last_interacted_at < ?", RECENTLY_USED.ago)
+      .order(Arel.sql("last_interacted_at ASC NULLS FIRST, id ASC"))
   end
 end
