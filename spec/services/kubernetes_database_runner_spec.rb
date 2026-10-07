@@ -83,11 +83,45 @@ RSpec.describe KubernetesDatabaseRunner do
     it "keeps MySQL's data directory below the volume root, and returns a mysql2 DATABASE_URL" do
       stub_applies(runner)
 
-      expect(runner.start!).to eq("mysql2://root@#{runner.container_name}/app_preview")
+      # With root's password in the URL, so it overrides any password in the
+      # app's own database.yml.
+      expect(runner.start!).to eq("mysql2://root:root@#{runner.container_name}/app_preview")
 
       container = applied_stateful_set.dig("spec", "template", "spec", "containers", 0)
       expect(container["args"]).to include("--datadir=/var/lib/preview-data/mysql", "--performance-schema=OFF", "--innodb-buffer-pool-size=32M")
       expect(container.dig("readinessProbe", "exec", "command")).to include("mysqladmin", "ping")
     end
+  end
+
+  context "with MongoDB" do
+    let(:preview) { create(:preview, app_name: "whitehall", branch: "mongo-branch") }
+    let(:runner) do
+      described_class.new(preview, GovukApps::Database.new(adapter: "mongodb", image: "mongo:7.0"), api:)
+        .tap { |runner| allow(runner).to receive(:pause) }
+    end
+
+    it "hands the app a MONGODB_URI, and runs mongod with its data below the volume root and a small cache" do
+      stub_applies(runner)
+
+      expect(runner.start!).to eq("mongodb://#{runner.container_name}/app_preview")
+      expect(runner.env_var).to eq("MONGODB_URI")
+
+      container = applied_stateful_set.dig("spec", "template", "spec", "containers", 0)
+      expect(container["command"].first(2)).to eq(["bash", "-c"])
+      expect(container["command"][2]).to include("mkdir -p /var/lib/preview-data/mongo")
+      expect(container["args"]).to eq(%w[mongod --dbpath /var/lib/preview-data/mongo --bind_ip_all --wiredTigerCacheSizeGB 0.25])
+      expect(container["ports"].first["containerPort"]).to eq(27_017)
+      expect(container.dig("readinessProbe", "exec", "command")).to include("mongosh")
+    end
+  end
+
+  it "doesn't override MySQL's or Postgres's own entrypoint" do
+    preview = create(:preview, app_name: "publishing-api", branch: "pg-branch")
+    runner = runner_for(preview)
+    stub_applies(runner)
+
+    runner.start!
+
+    expect(applied_stateful_set.dig("spec", "template", "spec", "containers", 0)).not_to have_key("command")
   end
 end

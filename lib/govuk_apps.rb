@@ -67,10 +67,13 @@ module GovukApps
     direct.flat_map { |dep| [dep, *dependency_tree(dep, full_stack:)] }
   end
 
-  # Whether a preview of `name` has a full stack worth offering - i.e. one
-  # that runs anything its core stack doesn't.
+  # Whether a preview of `name` offers a full stack: only if the app itself
+  # declares `full_stack_dependencies`. (Once offered, the full stack also
+  # includes its dependencies' own - e.g. Whitehall's includes Publishing
+  # API's Content Stores. But an app that just depends on Publishing API
+  # doesn't get a full stack of its own from that.)
   def self.full_stack_option?(name)
-    full_stack_extras(name).any?
+    find(name)&.full_stack_dependencies.present?
   end
 
   # What a preview of `name`'s full stack runs on top of its core stack.

@@ -212,9 +212,24 @@ RSpec.describe KubernetesRunner do
       expect(job.dig("spec", "template", "spec", "restartPolicy")).to eq("Never")
       expect(container["command"]).to eq(%w[bin/rails db:create db:schema:load])
       expect(env_hash(container)["DATABASE_URL"]).to eq("postgresql://postgres@db/app_preview")
+      # Re-runnable, despite RAILS_ENV=production.
+      expect(env_hash(container)["DISABLE_DATABASE_ENVIRONMENT_CHECK"]).to eq("1")
       expect(env_hash(container)).not_to include("WEB_CONCURRENCY")
       expect(job.dig("metadata", "name")).to start_with("govuk-preview-app-")
       expect(job.dig("metadata", "name").length).to be <= 63
+    end
+
+    it "creates indexes instead for a Mongoid app, which has no schema to load" do
+      job = nil
+      stub_request(:post, k8s_url(jobs_path)).to_return do |req|
+        job = JSON.parse(req.body)
+        json_response({})
+      end
+      stub_request(:get, %r{\A#{Regexp.escape(k8s_url(jobs_path))}/}).to_return(json_response({ status: { succeeded: 1 } }))
+
+      runner.migrate!(adapter: "mongodb")
+
+      expect(job.dig("spec", "template", "spec", "containers", 0, "command")).to eq(%w[bin/rails db:mongoid:create_indexes])
     end
 
     it "raises with the relevant part of the Job's logs when it fails" do

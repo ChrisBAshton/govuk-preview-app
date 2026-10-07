@@ -274,3 +274,95 @@ smart-answers:
     GOVUK_APP_DOMAIN: www.gov.uk
     GOVUK_WEBSITE_ROOT: https://www.gov.uk
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+
+# Mainstream Publisher. Not run alongside it (so those features won't work
+# in a preview): Link Checker API.
+publisher:
+  repo_url: https://github.com/alphagov/publisher.git
+  port_env_var: PORT
+  database:
+    adapter: postgresql
+    image: postgres:17
+  dependencies:
+    - publishing-api
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
+
+# Not run alongside it (so those features won't work in a preview): Link
+# Checker API. Reads published content from the real GOV.UK Content Store.
+collections-publisher:
+  repo_url: https://github.com/alphagov/collections-publisher.git
+  port_env_var: PORT
+  database:
+    adapter: mysql2
+    image: mysql:8
+  dependencies:
+    - publishing-api
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
+  env:
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+
+# Not run alongside it (so those features won't work in a preview): Asset
+# Manager (attachments) and Email Alert API.
+specialist-publisher:
+  repo_url: https://github.com/alphagov/specialist-publisher.git
+  port_env_var: PORT
+  database:
+    adapter: mysql2
+    image: mysql:8
+  dependencies:
+    - publishing-api
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
+  env:
+    # Its production config refuses to boot without a GOV.UK Notify key.
+    # This is a dummy in Notify's format, so no email is ever actually sent.
+    GOVUK_NOTIFY_API_KEY: preview-00000000-0000-0000-0000-000000000000-00000000-0000-0000-0000-000000000000
+    # Its seeds (which create the user that mock sign-in needs) only run in
+    # production when asked to - as for its Heroku review apps.
+    RUN_SEEDS_IN_PRODUCTION: "true"
+
+# Not run alongside it (so those features won't work in a preview): Asset
+# Manager (attachments). Reads published content from the real GOV.UK
+# Content Store.
+travel-advice-publisher:
+  repo_url: https://github.com/alphagov/travel-advice-publisher.git
+  port_env_var: PORT
+  database:
+    adapter: mongodb
+    image: mongo:7.0
+  dependencies:
+    - publishing-api
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
+  env:
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+
+# Not run alongside it (so those features won't work in a preview): Asset
+# Manager (attachments) and Link Checker API.
+manuals-publisher:
+  repo_url: https://github.com/alphagov/manuals-publisher.git
+  port_env_var: PORT
+  database:
+    adapter: mongodb
+    image: mongo:7.0
+  dependencies:
+    - publishing-api
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
+
+short-url-manager:
+  repo_url: https://github.com/alphagov/short-url-manager.git
+  port_env_var: PORT
+  database:
+    adapter: mongodb
+    image: mongo:7.0
+  dependencies:
+    - publishing-api
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
+
+# Has no background worker.
+service-manual-publisher:
+  repo_url: https://github.com/alphagov/service-manual-publisher.git
+  port_env_var: PORT
+  database:
+    adapter: postgresql
+    image: postgres:17
+  dependencies:
+    - publishing-api

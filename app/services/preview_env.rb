@@ -28,6 +28,9 @@ require "securerandom"
 # `env_aliases` (see Whitehall's in config/govuk_apps.yml). Older versions
 # of some apps (e.g. Whitehall, before it read GOVUK_ENVIRONMENT) also
 # guessed their environment from this containing "integration".
+# GOVUK_ASSET_ROOT: another standard Plek/GOV.UK env var - many publishing
+# apps resolve it at boot (e.g. Publisher's SafeHtml validator), and Plek
+# raises if it's unset in production.
 # WEB_CONCURRENCY/RAILS_MAX_THREADS (web pods only): every previewed app
 # configures Puma through govuk_app_config's GovukPuma, which by default
 # forks 2 worker processes - a full extra copy of the app each - with 5
@@ -54,6 +57,7 @@ module PreviewEnv
       "REDIS_URL" => StackRedis.url_for(preview),
       "GOVUK_ENVIRONMENT" => "integration",
       "GOVUK_WEBSITE_ROOT" => "https://www.integration.publishing.service.gov.uk",
+      "GOVUK_ASSET_ROOT" => "https://assets.integration.publishing.service.gov.uk",
       **(web ? WEB_SERVER_ENV : {}),
     }.merge(app.env).merge(extra_env).transform_values(&:to_s)
   end

@@ -178,9 +178,18 @@ class KubernetesRunner
   # Deliberately db:create db:schema:load, not db:prepare: db:prepare also
   # seeds the database itself the first time it creates one (see
   # ActiveRecord::Tasks::DatabaseTasks#prepare_all), which would double-seed
-  # alongside our own explicit #seed! call.
-  def migrate!(extra_env: {})
-    run_job!(%w[bin/rails db:create db:schema:load], extra_env:)
+  # alongside our own explicit #seed! call. MongoDB has no schema - its
+  # databases appear on first write - so Mongoid apps just get their
+  # indexes.
+  #
+  # DISABLE_DATABASE_ENVIRONMENT_CHECK: previews run with
+  # RAILS_ENV=production, and once a schema has been loaded Rails refuses to
+  # load it again into a "production" database. But a preview's build has
+  # to be re-runnable from any point (e.g. retrying one that failed while
+  # seeding), and its database is always disposable.
+  def migrate!(extra_env: {}, adapter: nil)
+    command = adapter == "mongodb" ? %w[bin/rails db:mongoid:create_indexes] : %w[bin/rails db:create db:schema:load]
+    run_job!(command, extra_env: extra_env.merge("DISABLE_DATABASE_ENVIRONMENT_CHECK" => "1"))
   end
 
   def seed!(extra_env: {})
