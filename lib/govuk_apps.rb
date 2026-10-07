@@ -11,7 +11,8 @@ module GovukApps
   Database = Struct.new(:adapter, :image, :memory, keyword_init: true)
   Definition = Struct.new(
     :name, :repo_url, :port_env_var, :env, :dependencies, :database, :setup_tasks,
-    :worker_command, :publicly_readable, :env_aliases, :full_stack_dependencies, :resync_tasks, :memory, keyword_init: true
+    :worker_command, :publicly_readable, :env_aliases, :full_stack_dependencies, :resync_tasks, :memory,
+    :shared_volumes, :self_url_env, :public_paths, keyword_init: true
   )
 
   def self.all
@@ -42,6 +43,9 @@ module GovukApps
         full_stack_dependencies: attrs.fetch("full_stack_dependencies", []),
         resync_tasks: attrs.fetch("resync_tasks", []),
         memory: attrs["memory"],
+        shared_volumes: attrs.fetch("shared_volumes", {}),
+        self_url_env: attrs.fetch("self_url_env", []),
+        public_paths: attrs["public_paths"],
       )
     end
   end

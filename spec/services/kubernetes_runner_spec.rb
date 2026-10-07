@@ -193,6 +193,73 @@ RSpec.describe KubernetesRunner do
     end
   end
 
+  describe "an app with shared_volumes" do
+    let(:preview) { create(:preview, app_name: "asset-manager", branch: "my-branch") }
+    let(:image) { "ghcr.io/alphagov/govuk/asset-manager:abc123" }
+    let(:name) { runner.container_name }
+    let(:claim) { "govuk-preview-app-#{preview.slug}-fake-s3" }
+
+    it "keeps each persistent volume on a claim of its own" do
+      apply_stub("v1", "persistentvolumeclaims", claim)
+      apply_stub("v1", "configmaps", "govuk-preview-app-#{preview.slug}-overrides")
+
+      runner.prepare!
+
+      expect(applied_body("v1", "persistentvolumeclaims", claim).dig("spec", "accessModes")).to eq(%w[ReadWriteOnce])
+    end
+
+    it "runs its worker in the web pod, with the volumes mounted in both" do
+      apply_stub("v1", "services", name)
+      apply_stub("apps/v1", "deployments", name)
+      stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name))).to_return(json_response(rolled_out_deployment))
+
+      runner.start!
+
+      pod = applied_body("apps/v1", "deployments", name).dig("spec", "template", "spec")
+      expect(pod["containers"].map { |c| c["name"] }).to eq(%w[app worker])
+      expect(pod["containers"].last["command"]).to eq(["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml", "-c", "2"])
+      pod["containers"].each do |container|
+        expect(container["volumeMounts"].map { |m| m["mountPath"] }).to include("/uploads", "/app/fake-s3")
+      end
+      expect(pod["volumes"]).to include(
+        { "name" => "shared-uploads", "emptyDir" => {} },
+        { "name" => "shared-fake-s3", "persistentVolumeClaim" => { "claimName" => claim } },
+      )
+      expect(pod["securityContext"]).to include("fsGroup" => 1001)
+    end
+
+    it "has no worker Deployment of its own, and removes one left from before" do
+      delete = stub_request(:delete, k8s_url(api.path("apps/v1", "deployments", runner.worker_container_name)))
+        .with(query: hash_including({})).to_return(json_response({}))
+      scale = stub_request(:patch, %r{/deployments/}).to_return(json_response({}))
+
+      runner.start_worker!
+      runner.scale!(0)
+
+      expect(delete).to have_been_made
+      expect(scale).to have_been_requested.once
+    end
+
+    it "deletes its claims along with everything else" do
+      stub_request(:delete, /k8s\.test/).to_return(json_response({}))
+
+      runner.stop!
+
+      expect(a_request(:delete, k8s_url(api.path("v1", "persistentvolumeclaims", claim))).with(query: hash_including({}))).to have_been_made
+    end
+
+    it "sets its self_url_env to its own public URL" do
+      apply_stub("v1", "services", name)
+      apply_stub("apps/v1", "deployments", name)
+      stub_request(:get, k8s_url(api.path("apps/v1", "deployments", name))).to_return(json_response(rolled_out_deployment))
+
+      runner.start!
+
+      container = applied_body("apps/v1", "deployments", name).dig("spec", "template", "spec", "containers", 0)
+      expect(env_hash(container)).to include("FAKE_S3_HOST" => preview.url, "PLEK_SERVICE_DRAFT_ASSETS_URI" => preview.url)
+    end
+  end
+
   describe "#migrate!" do
     let(:jobs_path) { api.path("batch/v1", "jobs") }
 

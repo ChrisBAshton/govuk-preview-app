@@ -46,7 +46,7 @@ RSpec.describe GovukApps do
       definition = described_class.find("whitehall")
 
       expect(definition.dependencies).to eq(%w[publishing-api])
-      expect(definition.full_stack_dependencies).to eq(%w[frontend draft-frontend])
+      expect(definition.full_stack_dependencies).to eq(%w[asset-manager frontend draft-frontend])
       expect(definition.database).to have_attributes(adapter: "mysql2", image: "mysql:8")
     end
 
@@ -193,7 +193,7 @@ RSpec.describe GovukApps do
   describe ".dependency_tree" do
     it "lists every transitive dependency, in build order" do
       expect(described_class.dependency_tree("whitehall")).to eq(
-        %w[publishing-api content-store draft-content-store frontend draft-frontend],
+        %w[publishing-api content-store draft-content-store asset-manager frontend draft-frontend],
       )
     end
 
@@ -215,7 +215,7 @@ RSpec.describe GovukApps do
 
   describe ".full_stack_option? and .full_stack_extras" do
     it "lists what an app's own full stack adds - e.g. Whitehall's Frontends, and Publishing API's Content Stores" do
-      expect(described_class.full_stack_extras("whitehall")).to eq(%w[content-store draft-content-store frontend draft-frontend])
+      expect(described_class.full_stack_extras("whitehall")).to eq(%w[content-store draft-content-store asset-manager frontend draft-frontend])
       expect(described_class.full_stack_extras("publishing-api")).to eq(%w[content-store draft-content-store])
       expect(described_class.full_stack_option?("whitehall")).to be(true)
     end

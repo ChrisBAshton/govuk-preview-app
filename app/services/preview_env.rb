@@ -38,6 +38,9 @@ require "securerandom"
 # means Puma's single mode, no forking) with a few threads is plenty, for
 # a fraction of the memory. Not set for worker/task pods: Sidekiq sizes its
 # database pool from RAILS_MAX_THREADS too (see KubernetesRunner).
+# Each app's manifest entry can also name env vars to set to the preview's
+# own public URL (`self_url_env`) - e.g. Asset Manager's asset hosts, which
+# it uses both to build asset URLs and to recognise requests for itself.
 # Beyond these, each app's manifest entry can declare a fixed set of extra
 # env vars (e.g. pointing an app's Plek-resolved dependencies at real
 # GOV.UK services), and `extra_env` carries per-instance values resolved
@@ -59,7 +62,7 @@ module PreviewEnv
       "GOVUK_WEBSITE_ROOT" => "https://www.integration.publishing.service.gov.uk",
       "GOVUK_ASSET_ROOT" => "https://assets.integration.publishing.service.gov.uk",
       **(web ? WEB_SERVER_ENV : {}),
-    }.merge(app.env).merge(extra_env).transform_values(&:to_s)
+    }.merge(app.env).merge(app.self_url_env.index_with { preview.url }).merge(extra_env).transform_values(&:to_s)
   end
 
   # A failing `bin/rails` invocation's output is usually preceded by

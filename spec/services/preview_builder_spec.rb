@@ -264,6 +264,7 @@ RSpec.describe PreviewBuilder do
         publishing_api = create(:preview, app_name: "publishing-api", branch: "main", parent: preview, status: :running)
         create(:preview, app_name: "content-store", branch: "main", parent: publishing_api, status: :running)
         create(:preview, app_name: "draft-content-store", branch: "main", parent: publishing_api, status: :running)
+        create(:preview, app_name: "asset-manager", branch: "main", parent: preview, status: :running)
         frontend = create(:preview, app_name: "frontend", branch: "main", parent: preview, status: :starting)
 
         expect { described_class.new(preview).build! }.to change(Preview, :count).by(1) # just draft-frontend

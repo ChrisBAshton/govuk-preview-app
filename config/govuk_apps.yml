@@ -75,6 +75,21 @@
 # leave 2-3x headroom for boot and spikes. Apps without one get a generous
 # default (see KubernetesRunner.memory_for) until they've been measured.
 #
+# `shared_volumes` are directories an app's web and worker processes both
+# need - e.g. Whitehall's web process saves an upload that its worker then
+# sends to Asset Manager. An app with any runs its worker as a second
+# container in its web pod (see KubernetesRunner), with each one mounted at
+# `path` in both. They start empty, and are lost when the preview is put to
+# sleep - unless `persistent: true`, which keeps one on a volume of its own
+# (`size`, default 1Gi) until the preview is deleted.
+#
+# `self_url_env` names env vars to set to the preview's own public URL - see
+# PreviewEnv.
+#
+# `public_paths` limits a `publicly_readable` dependency's public hostname to
+# GET and HEAD requests for paths starting with one of these - e.g. Asset
+# Manager's assets, but not its API (see HostRouter).
+#
 # `resync_tasks` names `bin/rails` tasks to run when a running preview is
 # switched to the full stack - e.g. re-sending everything Publishing API
 # holds to the Content Stores that have just been added.
@@ -158,6 +173,63 @@ publishing-api:
     # there's no RabbitMQ here for it to connect to.
     DISABLE_QUEUE_PUBLISHER: "1"
 
+# Whitehall's uploads (e.g. a news story's lead image) - a stack's own,
+# instead of the real Asset Manager on integration. GOV.UK's real one serves
+# draft assets only from a separate, signed-in draft-assets host; here there's
+# one host, which serves every asset whether it's draft or not. Whether a
+# draft is visible is down to Publishing API and the Content Stores anyway -
+# an asset is only linked to from the pages that use it.
+asset-manager:
+  memory:
+    request: 176Mi
+    limit: 512Mi
+  repo_url: https://github.com/alphagov/asset-manager.git
+  port_env_var: PORT
+  publicly_readable: true
+  # Assets (/media/...), and where Asset Manager redirects to for their files
+  # (/fake-s3/... - see below). Not its API, which changes things.
+  public_paths:
+    - /media/
+    - /fake-s3/
+  database:
+    adapter: mongodb
+    image: mongo:7.0
+    memory:
+      request: 112Mi
+      limit: 384Mi
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
+  # The web process saves each upload to GOVUK_UPLOADS_ROOT, and the worker
+  # scans it and copies it to fake-s3 (see below), where the web process
+  # then serves it from. The fake-s3 copy is the only lasting one, so it has
+  # to outlive the preview being put to sleep. Its path is fixed in Asset
+  # Manager's code (lib/fake_s3_configuration.rb).
+  shared_volumes:
+    uploads:
+      path: /uploads
+    fake-s3:
+      path: /app/fake-s3
+      persistent: true
+  # GOVUK_ASSET_ROOT is where its API says assets are. FAKE_S3_HOST is where
+  # it sends browsers for an asset's file. PLEK_SERVICE_DRAFT_ASSETS_URI makes
+  # its own public hostname its draft assets host, so it serves draft assets
+  # there instead of redirecting them to a draft-assets host that doesn't
+  # exist.
+  self_url_env:
+    - GOVUK_ASSET_ROOT
+    - FAKE_S3_HOST
+    - PLEK_SERVICE_ASSETS_URI
+    - PLEK_SERVICE_DRAFT_ASSETS_URI
+  env:
+    GOVUK_UPLOADS_ROOT: /uploads
+    # Stores files on disk, not in S3 - Asset Manager's own option for
+    # end-to-end tests (lib/s3_configuration.rb).
+    ALLOW_FAKE_S3_IN_PRODUCTION_FOR_PUBLISHING_E2E_TESTS: "true"
+    # Treats every file as virus-free, so it needs no ClamAV - the same as
+    # govuk-docker.
+    ASSET_MANAGER_CLAMSCAN_PATH: /bin/true
+    # Not a real secret - boot fails without one (config/application.rb).
+    JWT_AUTH_SECRET: preview-jwt-secret
+
 whitehall:
   memory:
     request: 288Mi
@@ -173,14 +245,22 @@ whitehall:
   dependencies:
     - publishing-api
   full_stack_dependencies:
+    - asset-manager
     - frontend
     - draft-frontend
   # In a full stack, link "View on website"/"Preview on website" (and every
-  # other public link Whitehall builds) to this preview's own Frontends.
-  # Otherwise they stay pointing at the real integration site.
+  # other public link Whitehall builds) to this preview's own Frontends, and
+  # build asset URLs (e.g. a lead image's) from its own Asset Manager.
+  # Otherwise they stay pointing at the real integration site. (In a core
+  # stack, uploads go to the sink, so they never finish processing.)
   env_aliases:
     GOVUK_WEBSITE_ROOT: PLEK_SERVICE_FRONTEND_PUBLIC_URL
     PLEK_SERVICE_DRAFT_ORIGIN_URI: PLEK_SERVICE_DRAFT_FRONTEND_PUBLIC_URL
+    GOVUK_ASSET_ROOT: PLEK_SERVICE_ASSET_MANAGER_PUBLIC_URL
+  # Where uploads wait for the worker to send them to Asset Manager.
+  shared_volumes:
+    uploads:
+      path: /uploads
   setup_tasks:
     - taxonomy:populate_end_to_end_test_data
     - taxonomy:rebuild_cache
@@ -202,6 +282,7 @@ whitehall:
     # any browser, meaning sessions (and CSRF token verification) silently
     # never persist across requests. Any truthy value works.
     DISABLE_SECURE_COOKIES: "1"
+    GOVUK_UPLOADS_ROOT: /uploads
 
 # The apps below previously only got a Heroku review app (see
 # docs.publishing.service.gov.uk/manual/review-apps.html) - plain,
