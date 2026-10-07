@@ -356,3 +356,13 @@ short-url-manager:
   dependencies:
     - publishing-api
   worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
+
+# Has no background worker.
+service-manual-publisher:
+  repo_url: https://github.com/alphagov/service-manual-publisher.git
+  port_env_var: PORT
+  database:
+    adapter: postgresql
+    image: postgres:17
+  dependencies:
+    - publishing-api
