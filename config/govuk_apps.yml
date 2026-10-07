@@ -334,3 +334,15 @@ travel-advice-publisher:
   worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
   env:
     PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
+
+# Not run alongside it (so those features won't work in a preview): Asset
+# Manager (attachments) and Link Checker API.
+manuals-publisher:
+  repo_url: https://github.com/alphagov/manuals-publisher.git
+  port_env_var: PORT
+  database:
+    adapter: mongodb
+    image: mongo:7.0
+  dependencies:
+    - publishing-api
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
