@@ -319,3 +319,18 @@ specialist-publisher:
     # Its seeds (which create the user that mock sign-in needs) only run in
     # production when asked to - as for its Heroku review apps.
     RUN_SEEDS_IN_PRODUCTION: "true"
+
+# Not run alongside it (so those features won't work in a preview): Asset
+# Manager (attachments). Reads published content from the real GOV.UK
+# Content Store.
+travel-advice-publisher:
+  repo_url: https://github.com/alphagov/travel-advice-publisher.git
+  port_env_var: PORT
+  database:
+    adapter: mongodb
+    image: mongo:7.0
+  dependencies:
+    - publishing-api
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
+  env:
+    PLEK_SERVICE_CONTENT_STORE_URI: https://www.gov.uk/api
