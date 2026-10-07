@@ -54,6 +54,10 @@ module PreviewsHelper
   # which preview it's for to screen readers, as Whitehall's do.
   def preview_actions(preview)
     actions = []
+    # A preview of an app since removed from the manifest can only be
+    # deleted (see Preview#app_known?).
+    return tag.div(delete_preview_link(preview), class: "app-actions") unless preview.app_known?
+
     actions << preview_post_link("Sleep", sleep_preview_path(preview), preview) if preview.running?
     if preview.running? && preview.status_message.blank? && GovukApps.full_stack_option?(preview.app_name)
       label = preview.full_stack? ? "Remove full stack" : "Add full stack"
@@ -61,14 +65,19 @@ module PreviewsHelper
     end
     actions << preview_post_link("Wake", wake_preview_path(preview), preview) if preview.sleeping?
     actions << preview_post_link("Retry", retry_preview_path(preview), preview) if preview.failed?
-    # Deleting asks first, on a page of its own - see #confirm_destroy.
-    actions << link_to(
+    actions << delete_preview_link(preview)
+
+    tag.div(safe_join(actions, tag.span("|", class: "app-actions__separator", "aria-hidden": "true")), class: "app-actions")
+  end
+
+  # Deleting asks first, on a page of its own - see
+  # PreviewsController#confirm_destroy.
+  def delete_preview_link(preview)
+    link_to(
       safe_join(["Delete", preview_action_context(preview)]),
       confirm_destroy_preview_path(preview),
       class: "govuk-link gem-link--destructive",
     )
-
-    tag.div(safe_join(actions, tag.span("|", class: "app-actions__separator", "aria-hidden": "true")), class: "app-actions")
   end
 
   # These actions change things, so they POST - from a form whose button

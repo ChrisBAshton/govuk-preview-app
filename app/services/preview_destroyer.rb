@@ -15,8 +15,11 @@ class PreviewDestroyer
 
     KubernetesRunner.new(preview).stop!
 
+    # For an app since removed from the manifest there's no telling whether
+    # it had a database - so delete one if it's there (deleting what isn't
+    # is harmless), rather than leaving a StatefulSet and volume behind.
     database = GovukApps.find(preview.app_name)&.database
-    KubernetesDatabaseRunner.new(preview, database).stop! if database
+    KubernetesDatabaseRunner.new(preview, database).stop! if database || !preview.app_known?
     StackRedis.new(preview).stop! if preview.parent_id.nil?
 
     preview.destroy!

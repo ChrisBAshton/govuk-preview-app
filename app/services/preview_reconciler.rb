@@ -14,11 +14,22 @@ class PreviewReconciler
     end
 
     Preview.where(status: %i[running sleeping]).find_each do |preview|
+      unless preview.app_known?
+        # update_columns, not update! - its app_name no longer passes
+        # validation.
+        preview.update_columns(
+          status: "failed",
+          status_message: "#{preview.app_name} is no longer a previewable app (it's not in " \
+            "config/govuk_apps.yml). Delete this preview.",
+        )
+        next
+      end
+
       missing = missing_infrastructure_for(preview)
       next if missing.blank?
 
-      preview.update!(
-        status: :failed,
+      preview.update_columns(
+        status: "failed",
         status_message: "Missing from the #{KubernetesApi.namespace} namespace: " \
           "#{missing}. Recreate this preview.",
       )

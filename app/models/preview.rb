@@ -74,6 +74,13 @@ class Preview < ApplicationRecord
     "#{public_hostname || slug}.#{self.class.base_domain}"
   end
 
+  # Whether this preview's app is still in config/govuk_apps.yml. One that's
+  # since been removed (or renamed) can't be built, woken or resized any
+  # more - only deleted - and code that looks its app up mustn't assume it.
+  def app_known?
+    GovukApps.find(app_name).present?
+  end
+
   # The top-level preview this one ultimately exists for (itself, if it has
   # no parent) - previews are slept, woken and charged for capacity as a
   # whole stack, via their root.

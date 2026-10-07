@@ -18,6 +18,20 @@ RSpec.describe InterruptedJobResumer do
   end
 
   describe ".run!" do
+    it "doesn't resume building a preview of an app no longer in the manifest" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :starting)
+      preview.update_column(:app_name, "removed-app")
+
+      expect { described_class.run! }.not_to change(PreviewsCreateJob.jobs, :size)
+    end
+
+    it "still resumes deleting a preview of an app no longer in the manifest" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :stopping)
+      preview.update_column(:app_name, "removed-app")
+
+      expect { described_class.run! }.to change(PreviewsDestroyJob.jobs, :size).by(1)
+    end
+
     it "re-queues the build of a top-level preview left mid-build with no job to finish it" do
       preview = create(:preview, app_name: "whitehall", branch: "my-branch", status: :starting)
 

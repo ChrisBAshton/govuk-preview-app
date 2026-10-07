@@ -26,13 +26,16 @@ class InterruptedJobResumer
     # A resize leaves the preview running, so it's recognised by the
     # message it shows while in progress instead.
     Preview.where(parent_id: nil, status: :running, status_message: [PreviewResizer::ADDING, PreviewResizer::REMOVING]).find_each do |preview|
-      next if job_pending?(PreviewsResizeJob, preview)
+      next if !preview.app_known? || job_pending?(PreviewsResizeJob, preview)
 
       PreviewsResizeJob.perform_async(preview.id, preview.full_stack)
     end
 
     JOBS.each do |job_class, statuses|
       Preview.where(parent_id: nil, status: statuses).find_each do |preview|
+        # Nothing to build, wake or resize for an app that's been removed
+        # from the manifest - but it can still be deleted.
+        next if job_class != PreviewsDestroyJob && !preview.app_known?
         next if job_pending?(job_class, preview)
 
         Rails.logger.info("InterruptedJobResumer: re-queueing #{job_class} for preview #{preview.slug}")
