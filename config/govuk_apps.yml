@@ -346,3 +346,13 @@ manuals-publisher:
   dependencies:
     - publishing-api
   worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
+
+short-url-manager:
+  repo_url: https://github.com/alphagov/short-url-manager.git
+  port_env_var: PORT
+  database:
+    adapter: mongodb
+    image: mongo:7.0
+  dependencies:
+    - publishing-api
+  worker_command: ["bundle", "exec", "sidekiq", "-C", "./config/sidekiq.yml"]
