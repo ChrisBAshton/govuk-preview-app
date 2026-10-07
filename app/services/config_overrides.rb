@@ -27,6 +27,14 @@
 #   allowlist (e.g. Whitehall), so ActionDispatch::HostAuthorization blocks
 #   every preview subdomain with a 403 - clearing it removes that check
 #   entirely, harmless here since preview subdomains aren't public-facing.
+# - apps' Content Security Policies (e.g. Frontend's, from govuk_app_config)
+#   only allow images from real GOV.UK hosts - so a page couldn't show an
+#   image from its stack's own Asset Manager, at a preview hostname. Every
+#   preview's hostname is added to img-src, for apps that have a policy at
+#   all. (Locally, `*.dev.gov.uk` doesn't cover them either: a source with
+#   no port only matches the scheme's default one, and previews are on
+#   :8080.) Frontend sets its policy in an initializer of its own, which
+#   runs before this one.
 class ConfigOverrides
   FILENAME = "zzz_preview_app_overrides.rb".freeze
 
@@ -40,6 +48,11 @@ class ConfigOverrides
         )
       end
       Rails.application.config.hosts.clear
+      # Through #directives: a directive's own method (e.g. img_src) with no
+      # arguments deletes it.
+      if (policy = Rails.application.config.content_security_policy) && policy.directives["img-src"]
+        policy.directives["img-src"] += [#{Preview.csp_source.inspect}]
+      end
     RUBY
   end
 end

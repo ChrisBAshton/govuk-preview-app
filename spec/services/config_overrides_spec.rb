@@ -1,6 +1,13 @@
 require "rails_helper"
 
 RSpec.describe ConfigOverrides do
+  # Runs just the Content Security Policy part against a stand-in for an
+  # app's config.
+  def run_image_override(config) # rubocop:disable Lint/UnusedMethodArgument
+    snippet = described_class.content.lines.drop_while { |line| !line.include?("content_security_policy") }.join
+    eval(snippet.gsub("Rails.application.config", "config")) # rubocop:disable Security/Eval
+  end
+
   describe ".content" do
     it "is valid Ruby" do
       expect { RubyVM::InstructionSequence.compile(described_class.content) }.not_to raise_error
@@ -8,6 +15,19 @@ RSpec.describe ConfigOverrides do
 
     it "reconnects from DATABASE_URL on top of the app's own config, rather than instead of it" do
       expect(described_class.content).to include("configs_for(env_name: Rails.env)", "merge(url: ENV[\"DATABASE_URL\"])")
+    end
+
+    it "lets apps with a Content Security Policy show images from any preview, e.g. its stack's Asset Manager" do
+      policy = ActionDispatch::ContentSecurityPolicy.new { |p| p.img_src :self, "*.dev.gov.uk" }
+      config = Struct.new(:content_security_policy).new(policy)
+
+      run_image_override(config)
+
+      expect(policy.directives["img-src"]).to eq(["'self'", "*.dev.gov.uk", "http://*.govuk-preview-app.dev.gov.uk"])
+    end
+
+    it "leaves apps with no Content Security Policy without one" do
+      expect { run_image_override(Struct.new(:content_security_policy).new(nil)) }.not_to raise_error
     end
 
     it "doesn't patch any app's own code - e.g. Whitehall's public links come from env vars instead" do
