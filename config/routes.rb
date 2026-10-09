@@ -10,8 +10,8 @@ Rails.application.routes.draw do
   # OauthController/PreviewSignon. Paths fixed by gds-sso's own real OAuth2
   # strategy, not ours to choose.
   get "/oauth/authorize", to: "oauth#authorize"
-  post "/oauth/access_token", to: "oauth#token"
-  get "/user.json", to: "oauth#user_info"
+  post "/oauth/access_token", to: "oauth_tokens#token"
+  get "/user.json", to: "oauth_tokens#user_info"
 
   resources :previews, only: %i[index new create destroy] do
     member do

@@ -33,7 +33,9 @@ module PreviewSignon
   AuthorizationError = Class.new(StandardError)
 
   def self.redis
-    @redis ||= RedisClient.new(url: ENV.fetch("REDIS_URL"))
+    # Same default as govuk_sidekiq's own railtie - CI's setup-redis action
+    # just starts one on this port, with no REDIS_URL of its own.
+    @redis ||= RedisClient.new(url: ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379"))
   end
 
   # Only true for a real, currently-running preview's own callback URL -
