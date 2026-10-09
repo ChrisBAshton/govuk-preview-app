@@ -372,6 +372,9 @@ publisher:
     # `secure` in production, so no browser keeps it over our plain-HTTP
     # entry point and every form submission fails CSRF verification.
     DISABLE_SECURE_COOKIES: "1"
+    # Not a real secret - Publisher signs its draft preview links with this
+    # (PathsHelper#jwt_token), and creating an edition crashes without one.
+    JWT_AUTH_SECRET: preview-jwt-secret
 
 # Not run alongside it (so those features won't work in a preview): Link
 # Checker API. Reads published content from the real GOV.UK Content Store.
