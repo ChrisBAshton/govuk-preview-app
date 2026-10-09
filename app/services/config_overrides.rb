@@ -47,6 +47,19 @@
 #   Warden::OAuth2 back to gds-sso's own mock token model (accepts any
 #   token as a trusted dummy API user) restores that, independently of
 #   the real strategy still gating actual browser logins.
+# - that same mock token model's one dummy API user (gds-sso's
+#   GDS::SSO::MockBearerToken) is found-or-created by a plain, unindexed
+#   email lookup, with no protection against two concurrent first-ever API
+#   calls both creating one - so two apps' own dummy users (e.g. Whitehall's
+#   worker and Asset Manager's own) aren't guaranteed to end up being the
+#   *same* row every time, even though every mock API call is conceptually
+#   "trusted". Asset Manager's own authorization falls back to an explicit
+#   permission when an asset's owner isn't literally the same row as the
+#   caller (Asset#manageable_by?) - otherwise rejecting Whitehall's own
+#   later read-back of an asset it just created itself, under a
+#   differently-looked-up dummy user, as a 403. Granting every previewed
+#   app's dummy user that permission sidesteps the ambiguity entirely,
+#   rather than fixing gds-sso's own race.
 class ConfigOverrides
   FILENAME = "zzz_preview_app_overrides.rb".freeze
 
@@ -67,6 +80,9 @@ class ConfigOverrides
       end
       if defined?(Warden::OAuth2) && defined?(GDS::SSO::MockBearerToken)
         Warden::OAuth2.config.token_model = GDS::SSO::MockBearerToken
+      end
+      if defined?(GDS::SSO::Config)
+        GDS::SSO::Config.additional_mock_permissions_required = ["Manage all Assets"]
       end
     RUBY
   end
