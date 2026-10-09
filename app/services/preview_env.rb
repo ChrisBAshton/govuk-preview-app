@@ -63,7 +63,7 @@ module PreviewEnv
       "GDS_SSO_STRATEGY" => "real",
       "GDS_SSO_OAUTH_ID" => app.name,
       "GDS_SSO_OAUTH_SECRET" => PreviewSignon::CLIENT_SECRET,
-      "PLEK_SERVICE_SIGNON_URI" => "#{Preview.scheme}://#{Preview.base_domain}",
+      "PLEK_SERVICE_SIGNON_URI" => "#{Preview.scheme}://#{Preview.admin_hostname}",
       "REDIS_URL" => StackRedis.url_for(preview),
       "GOVUK_ENVIRONMENT" => "integration",
       "GOVUK_WEBSITE_ROOT" => "https://www.integration.publishing.service.gov.uk",

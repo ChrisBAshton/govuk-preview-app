@@ -53,12 +53,13 @@ Rails.application.configure do
   # Only use :id for inspections in production.
   config.active_record.attributes_for_inspect = [:id]
 
-  # Allow the app's own hostname, and any preview subdomain of it (see
-  # HostRouter) - defaults to the local dev domain, but is the same
-  # PREVIEW_APP_BASE_DOMAIN env var used on integration.
-  base_domain = ENV.fetch("PREVIEW_APP_BASE_DOMAIN", "govuk-preview-app.dev.gov.uk")
-  config.hosts << base_domain
-  config.hosts << /.*\.#{Regexp.escape(base_domain)}/
+  # Allow the app's own hostname, and any preview subdomain (see
+  # HostRouter) - the same domain locally and normally on integration too,
+  # but Preview.base_domain can point previews at a *different* domain
+  # than the app's own hostname (see its own comment).
+  config.hosts << Preview.admin_hostname
+  config.hosts << Preview.base_domain
+  config.hosts << /.*\.#{Regexp.escape(Preview.base_domain)}/
 
   # Skip DNS rebinding protection for the health check endpoints -
   # Kubernetes probes address the pod by IP, not by any of the hosts above.
