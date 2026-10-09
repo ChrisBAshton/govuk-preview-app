@@ -16,7 +16,9 @@
 # Previews currently live under a *different* domain to Preview App
 # itself (see Preview.base_domain's own comment) - no cookie set on
 # Preview App's own hostname can ever reach that domain, so this can't
-# just check the same session Preview App's own pages use. An
+# just check the same session Preview App's own pages use (nor, for the
+# same reason, Warden's own env["warden"] - absent here anyway, since
+# this runs before Warden::Manager too, see its own initializer). An
 # unauthenticated visit is sent to OauthController#continue, which does
 # the real Signon round-trip and hands back a short-lived signed token in
 # the URL (the one thing that *can* cross that boundary) - #call below
@@ -43,7 +45,7 @@ class HostRouter
     request = Rack::Request.new(env)
     token = request.GET["preview_auth"]
     return accept_preview_access(request, token) if token.present? && PreviewSignon.uid_for_preview_access_token(token)
-    return redirect_to_login(request) unless authenticated?(env, request)
+    return redirect_to_login(request) unless authenticated?(request)
 
     # A visit is an interaction - including one to a sleeping preview, which
     # wakes it.
@@ -57,10 +59,8 @@ class HostRouter
 
 private
 
-  def authenticated?(env, request)
-    warden = env["warden"]
-    (warden && warden.authenticated? && !warden.user.remotely_signed_out?) ||
-      PreviewSignon.uid_for_preview_access_token(request.cookies[ACCESS_COOKIE].to_s).present?
+  def authenticated?(request)
+    PreviewSignon.uid_for_preview_access_token(request.cookies[ACCESS_COOKIE].to_s).present?
   end
 
   def redirect_to_login(request)
