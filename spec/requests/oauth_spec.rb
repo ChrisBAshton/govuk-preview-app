@@ -100,6 +100,16 @@ RSpec.describe "OAuth provider for previewed apps" do
       )
     end
 
+    it "accepts a redirect_uri with a query string appended, matching OmniAuth's own callback_url exactly" do
+      code = issued_code
+
+      post "/oauth/access_token",
+           params: { code: code, redirect_uri: "#{redirect_uri}?code=#{code}&state=xyz", code_verifier: code_verifier },
+           headers: basic_auth_header(preview.app_name, PreviewSignon::CLIENT_SECRET)
+
+      expect(response).to have_http_status(:ok)
+    end
+
     it "grants an app's own configured permissions (e.g. Whitehall's)" do
       whitehall_preview = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running)
       login_as(user)

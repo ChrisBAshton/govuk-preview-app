@@ -7,8 +7,8 @@ RSpec.describe HostRouter do
   def env_for(host_with_optional_port, path: "/", authenticated: true)
     env = Rack::MockRequest.env_for("http://#{host_with_optional_port}#{path}")
     if authenticated
-      warden_user = instance_double(User, remotely_signed_out?: false)
-      env["warden"] = instance_double(Warden::Proxy, authenticated?: true, user: warden_user)
+      token = PreviewSignon.issue_preview_access_token(create(:user))
+      env["HTTP_COOKIE"] = "_govuk_preview_access=#{token}"
     end
     env
   end
@@ -59,16 +59,6 @@ RSpec.describe HostRouter do
       expect(proxy).not_to have_received(:call)
     end
 
-    it "treats a remotely signed-out user the same as not being signed in at all" do
-      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
-      env = env_for(preview.hostname)
-      env["warden"] = instance_double(Warden::Proxy, authenticated?: true, user: instance_double(User, remotely_signed_out?: true))
-
-      status, = described_class.new(app).call(env)
-
-      expect(status).to eq(302)
-    end
-
     it "accepts a valid preview_auth token: sets its own cookie and redirects to the same URL with it stripped" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
       user = create(:user)
@@ -97,7 +87,7 @@ RSpec.describe HostRouter do
       expect(headers["location"]).to start_with("#{Preview.scheme}://#{Preview.admin_hostname}/oauth/continue")
     end
 
-    it "proxies when the preview_auth cookie from an earlier visit is still valid - no Preview App session needed" do
+    it "proxies when the preview_auth cookie from an earlier visit is still valid" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
       user = create(:user)
       token = PreviewSignon.issue_preview_access_token(user)
