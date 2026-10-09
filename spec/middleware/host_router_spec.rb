@@ -59,6 +59,16 @@ RSpec.describe HostRouter do
       expect(proxy).not_to have_received(:call)
     end
 
+    it "includes the local dev port in the admin host's own URL too, not just the preview's own" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("PREVIEW_APP_EXTERNAL_PORT").and_return("8080")
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+
+      _status, headers, = described_class.new(app).call(env_for(preview.hostname, authenticated: false))
+
+      expect(headers["location"]).to start_with("#{Preview.scheme}://#{Preview.admin_hostname}:8080/oauth/continue")
+    end
+
     it "accepts a valid preview_auth token: sets its own cookie and redirects to the same URL with it stripped" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
       user = create(:user)
