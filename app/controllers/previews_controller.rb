@@ -31,6 +31,15 @@ class PreviewsController < ApplicationController
     @preview = Preview.find(params[:id])
   end
 
+  # A one-shot read of a pod's recent log output - see KubernetesRunner#logs.
+  def logs
+    @preview = Preview.find(params[:id])
+    runner = KubernetesRunner.new(@preview)
+    @log_components = runner.log_components
+    @component = @log_components.include?(params[:component]) ? params[:component] : "web"
+    @logs = runner.logs(component: @component)
+  end
+
   def destroy
     preview = Preview.find(params[:id])
     # update_column, not update! - a preview must always be deletable, even

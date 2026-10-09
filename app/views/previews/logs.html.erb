@@ -1,0 +1,29 @@
+<% content_for :page_title, "Logs: #{@preview.app_name} (#{@preview.branch})" %>
+<% content_for :back_link do %>
+  <%= render "govuk_publishing_components/components/back_link", href: previews_path %>
+<% end %>
+
+<%= render "govuk_publishing_components/components/heading", text: "Logs: #{@preview.app_name} (#{@preview.branch})", heading_level: 1, margin_bottom: 4 %>
+
+<% if @log_components.size > 1 %>
+  <p class="govuk-body">
+    <% @log_components.each_with_index do |component, index| %>
+      <%= " | " unless index.zero? %>
+      <% if component == @component %>
+        <strong><%= component.capitalize %></strong>
+      <% else %>
+        <%= link_to component.capitalize, logs_preview_path(@preview, component: component), class: "govuk-link" %>
+      <% end %>
+    <% end %>
+  </p>
+<% end %>
+
+<p class="govuk-body">
+  <%= link_to "Refresh", logs_preview_path(@preview, component: @component), class: "govuk-link" %>
+</p>
+
+<% if @logs.nil? %>
+  <p class="govuk-body">No pod found for this yet - it may still be starting, asleep, or not yet built.</p>
+<% else %>
+  <pre class="app-logs"><%= @logs %></pre>
+<% end %>

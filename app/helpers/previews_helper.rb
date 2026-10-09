@@ -49,14 +49,18 @@ module PreviewsHelper
     tag.ul(safe_join(sources.map { |source| tag.li(source) }), class: "govuk-list govuk-list--bullet")
   end
 
-  # A top-level preview's actions (its dependencies go wherever it goes),
-  # as links separated by pipes - like Whitehall's admin tables. Each says
-  # which preview it's for to screen readers, as Whitehall's do.
+  # A preview's actions, as links separated by pipes - like Whitehall's
+  # admin tables. Each says which preview it's for to screen readers, as
+  # Whitehall's do. A dependency only ever gets "View logs" - the rest
+  # (Sleep/Wake/Resize/Retry/Delete) act on its whole stack, so they're
+  # only offered on the top-level preview they actually belong to.
   def preview_actions(preview)
-    actions = []
+    actions = [view_logs_link(preview)]
+    return actions_cell(actions) if preview.parent.present?
+
     # A preview of an app since removed from the manifest can only be
-    # deleted (see Preview#app_known?).
-    return tag.div(delete_preview_link(preview), class: "app-actions") unless preview.app_known?
+    # deleted (see Preview#app_known?) besides having its logs read.
+    return actions_cell(actions << delete_preview_link(preview)) unless preview.app_known?
 
     actions << preview_post_link("Sleep", sleep_preview_path(preview), preview) if preview.running?
     if preview.running? && preview.status_message.blank? && GovukApps.full_stack_option?(preview.app_name)
@@ -67,6 +71,10 @@ module PreviewsHelper
     actions << preview_post_link("Retry", retry_preview_path(preview), preview) if preview.failed?
     actions << delete_preview_link(preview)
 
+    actions_cell(actions)
+  end
+
+  def actions_cell(actions)
     tag.div(safe_join(actions, tag.span("|", class: "app-actions__separator", "aria-hidden": "true")), class: "app-actions")
   end
 
@@ -77,6 +85,15 @@ module PreviewsHelper
       safe_join(["Delete", preview_action_context(preview)]),
       confirm_destroy_preview_path(preview),
       class: "govuk-link gem-link--destructive",
+    )
+  end
+
+  # Reading, not changing anything - see PreviewsController#logs.
+  def view_logs_link(preview)
+    link_to(
+      safe_join(["View logs", preview_action_context(preview)]),
+      logs_preview_path(preview),
+      class: "govuk-link",
     )
   end
 

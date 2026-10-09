@@ -43,6 +43,80 @@ RSpec.describe KubernetesRunner do
     end
   end
 
+  describe "#log_components" do
+    it "offers only web for an app with no worker at all" do
+      frontend_runner = described_class.new(create(:preview, app_name: "frontend", branch: "my-branch"), api: api)
+
+      expect(frontend_runner.log_components).to eq(%w[web])
+    end
+
+    it "offers web and worker for an app whose worker runs as its own Deployment" do
+      expect(runner.log_components).to eq(%w[web worker]) # preview is publishing-api
+    end
+
+    it "offers web and worker for an app whose worker runs inside the web pod instead" do
+      whitehall_runner = described_class.new(create(:preview, app_name: "whitehall", branch: "my-branch"), api: api)
+
+      expect(whitehall_runner.log_components).to eq(%w[web worker])
+    end
+
+    it "offers only web for a preview whose app has since been removed from the manifest" do
+      preview.update_column(:app_name, "removed-app")
+
+      expect(runner.log_components).to eq(%w[web])
+    end
+  end
+
+  describe "#logs" do
+    it "reads the web pod's own log, tailed to the default number of lines" do
+      stub_request(:get, k8s_url(api.path("v1", "pods")))
+        .with(query: hash_including("labelSelector" => "app.kubernetes.io/instance=#{runner.container_name}"))
+        .to_return(json_response({ items: [{ metadata: { name: "web-pod" } }] }))
+      stub_request(:get, k8s_url(api.path("v1", "pods", "web-pod", "log")))
+        .with(query: { "tailLines" => "300" })
+        .to_return(status: 200, body: "web log output")
+
+      expect(runner.logs).to eq("web log output")
+    end
+
+    it "reads a separate worker Deployment's own pod, for an app whose worker isn't in the web pod" do
+      stub_request(:get, k8s_url(api.path("v1", "pods")))
+        .with(query: hash_including("labelSelector" => "app.kubernetes.io/instance=#{runner.worker_container_name}"))
+        .to_return(json_response({ items: [{ metadata: { name: "worker-pod" } }] }))
+      stub_request(:get, k8s_url(api.path("v1", "pods", "worker-pod", "log")))
+        .with(query: { "tailLines" => "300" })
+        .to_return(status: 200, body: "worker log output")
+
+      expect(runner.logs(component: "worker")).to eq("worker log output")
+    end
+
+    it "reads the worker container within the web pod, for an app whose worker runs there instead" do
+      whitehall_runner = described_class.new(create(:preview, app_name: "whitehall", branch: "my-branch"), api: api)
+      stub_request(:get, k8s_url(api.path("v1", "pods")))
+        .with(query: hash_including("labelSelector" => "app.kubernetes.io/instance=#{whitehall_runner.container_name}"))
+        .to_return(json_response({ items: [{ metadata: { name: "whitehall-web-pod" } }] }))
+      stub_request(:get, k8s_url(api.path("v1", "pods", "whitehall-web-pod", "log")))
+        .with(query: { "tailLines" => "300", "container" => "worker" })
+        .to_return(status: 200, body: "in-pod worker log output")
+
+      expect(whitehall_runner.logs(component: "worker")).to eq("in-pod worker log output")
+    end
+
+    it "returns nil when no pod exists for it yet" do
+      stub_request(:get, k8s_url(api.path("v1", "pods"))).with(query: hash_including({})).to_return(json_response({ items: [] }))
+
+      expect(runner.logs).to be_nil
+    end
+
+    it "returns a readable message instead of raising, when the Kubernetes API errors" do
+      stub_request(:get, k8s_url(api.path("v1", "pods"))).with(query: hash_including({}))
+        .to_return(json_response({ items: [{ metadata: { name: "web-pod" } }] }))
+      stub_request(:get, k8s_url(api.path("v1", "pods", "web-pod", "log"))).with(query: hash_including({})).to_return(status: 500, body: "boom")
+
+      expect(runner.logs).to match(/\A\(couldn't read logs: GET .* failed \(500\)/)
+    end
+  end
+
   describe ".memory_for" do
     it "uses an app's measured memory settings from the manifest" do
       expect(described_class.memory_for(GovukApps.find("whitehall"))).to eq(request: "288Mi", limit: "768Mi")

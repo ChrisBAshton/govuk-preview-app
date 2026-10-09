@@ -12,7 +12,7 @@
     { text: "URL" },
     { text: "Created at" },
     { text: "Last interaction" },
-    { text: "" },
+    { text: "Actions" },
   ],
   rows: previews_with_dependencies(@previews).map do |preview, dependency|
     # A sleeping preview keeps its link - visiting it wakes it up.
@@ -40,7 +40,7 @@
       { text: preview_time(preview.created_at) },
       # Visits are recorded against the whole stack, i.e. its top-level preview.
       { text: preview.parent.blank? ? preview_time(preview.last_interacted_at, blank: "Never") : "" },
-      { text: preview.parent.blank? ? preview_actions(preview) : "" },
+      { text: preview_actions(preview) },
     ]
   end,
 } %>
