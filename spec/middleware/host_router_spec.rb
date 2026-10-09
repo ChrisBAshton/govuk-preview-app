@@ -4,8 +4,13 @@ RSpec.describe HostRouter do
   let(:app) { ->(_env) { [200, {}, ["app response"]] } }
   let(:router) { described_class.new(app) }
 
-  def env_for(host_with_optional_port, path: "/")
-    Rack::MockRequest.env_for("http://#{host_with_optional_port}#{path}")
+  def env_for(host_with_optional_port, path: "/", authenticated: true)
+    env = Rack::MockRequest.env_for("http://#{host_with_optional_port}#{path}")
+    if authenticated
+      warden_user = instance_double(User, remotely_signed_out?: false)
+      env["warden"] = instance_double(Warden::Proxy, authenticated?: true, user: warden_user)
+    end
+    env
   end
 
   it "passes through to the app for the bare host" do
@@ -38,6 +43,73 @@ RSpec.describe HostRouter do
     expect(proxy).to have_received(:call).with(
       hash_including("rack.backend" => "http://govuk-preview-app-#{preview.slug}.previews.svc.cluster.local"),
     )
+  end
+
+  describe "requiring a real Preview App sign-in" do
+    it "redirects to OauthController#continue instead of proxying, preserving the original URL" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+      proxy = instance_double(Rack::Proxy, call: [200, {}, %w[proxied]])
+      allow(Rack::Proxy).to receive(:new).and_return(proxy)
+
+      status, headers, = described_class.new(app).call(env_for(preview.hostname, path: "/some/page", authenticated: false))
+
+      expect(status).to eq(302)
+      redirect_uri = CGI.escape("#{Preview.scheme}://#{preview.hostname}/some/page")
+      expect(headers["location"]).to eq("#{Preview.scheme}://#{Preview.admin_hostname}/oauth/continue?redirect_uri=#{redirect_uri}")
+      expect(proxy).not_to have_received(:call)
+    end
+
+    it "treats a remotely signed-out user the same as not being signed in at all" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+      env = env_for(preview.hostname)
+      env["warden"] = instance_double(Warden::Proxy, authenticated?: true, user: instance_double(User, remotely_signed_out?: true))
+
+      status, = described_class.new(app).call(env)
+
+      expect(status).to eq(302)
+    end
+
+    it "accepts a valid preview_auth token: sets its own cookie and redirects to the same URL with it stripped" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+      user = create(:user)
+      token = PreviewSignon.issue_preview_access_token(user)
+      proxy = instance_double(Rack::Proxy, call: [200, {}, %w[proxied]])
+      allow(Rack::Proxy).to receive(:new).and_return(proxy)
+
+      env = env_for(preview.hostname, path: "/some/page?preview_auth=#{CGI.escape(token)}&other=1", authenticated: false)
+      status, headers, = described_class.new(app).call(env)
+
+      expect(status).to eq(302)
+      expect(headers["location"]).to eq("#{Preview.scheme}://#{preview.hostname}/some/page?other=1")
+      expect(headers["set-cookie"]).to include("domain=.#{Preview.base_domain}", "httponly")
+      cookie_value = CGI.unescape(headers["set-cookie"][/_govuk_preview_access=([^;]+)/, 1])
+      expect(cookie_value).to eq(token)
+      expect(proxy).not_to have_received(:call)
+    end
+
+    it "rejects an invalid or expired preview_auth token, falling back to a login redirect" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+
+      env = env_for(preview.hostname, path: "/?preview_auth=not-a-real-token", authenticated: false)
+      status, headers, = described_class.new(app).call(env)
+
+      expect(status).to eq(302)
+      expect(headers["location"]).to start_with("#{Preview.scheme}://#{Preview.admin_hostname}/oauth/continue")
+    end
+
+    it "proxies when the preview_auth cookie from an earlier visit is still valid - no Preview App session needed" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+      user = create(:user)
+      token = PreviewSignon.issue_preview_access_token(user)
+      proxy = instance_double(Rack::Proxy, call: [200, {}, %w[proxied]])
+      allow(Rack::Proxy).to receive(:new).and_return(proxy)
+
+      env = env_for(preview.hostname, authenticated: false)
+      env["HTTP_COOKIE"] = "_govuk_preview_access=#{token}"
+      described_class.new(app).call(env)
+
+      expect(proxy).to have_received(:call)
+    end
   end
 
   it "does not proxy a preview that exists but isn't running" do

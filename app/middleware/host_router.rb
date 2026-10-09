@@ -5,10 +5,30 @@
 # anything else (the app's own UI, or an unmatched/stale preview subdomain)
 # fall through unchanged.
 #
+# Requires a real Preview App Signon session before proxying to any
+# preview - the one gate every preview goes through regardless of the
+# previewed app's own code, since not every app has its own login to
+# redirect (e.g. Frontend has no gds-sso at all - setting
+# GDS_SSO_STRATEGY=real on it, as PreviewEnv does for every app, is a
+# no-op if nothing in that app ever calls authenticate_user!). Lives here,
+# not in each app, so it can't be missed.
+#
+# Previews currently live under a *different* domain to Preview App
+# itself (see Preview.base_domain's own comment) - no cookie set on
+# Preview App's own hostname can ever reach that domain, so this can't
+# just check the same session Preview App's own pages use. An
+# unauthenticated visit is sent to OauthController#continue, which does
+# the real Signon round-trip and hands back a short-lived signed token in
+# the URL (the one thing that *can* cross that boundary) - #call below
+# verifies it and sets its own cookie, scoped to wherever previews
+# actually live, so that one round trip covers every preview from then
+# on, not just the one that triggered it.
+#
 # Visiting a preview whose stack has been put to sleep (see PreviewSleeper)
 # wakes it, showing a self-refreshing "Waking up" page until it's back.
 class HostRouter
   ROUTABLE_STATUSES = %w[running sleeping waking].freeze
+  ACCESS_COOKIE = "_govuk_preview_access".freeze
 
   def initialize(app)
     @app = app
@@ -19,6 +39,11 @@ class HostRouter
     preview = matching_preview(env)
     return @app.call(env) unless preview
     return not_found unless publicly_allowed?(preview, env)
+
+    request = Rack::Request.new(env)
+    token = request.GET["preview_auth"]
+    return accept_preview_access(request, token) if token.present? && PreviewSignon.uid_for_preview_access_token(token)
+    return redirect_to_login(request) unless authenticated?(env, request)
 
     # A visit is an interaction - including one to a sleeping preview, which
     # wakes it.
@@ -31,6 +56,45 @@ class HostRouter
   end
 
 private
+
+  def authenticated?(env, request)
+    warden = env["warden"]
+    (warden && warden.authenticated? && !warden.user.remotely_signed_out?) ||
+      PreviewSignon.uid_for_preview_access_token(request.cookies[ACCESS_COOKIE].to_s).present?
+  end
+
+  def redirect_to_login(request)
+    continue_url = "#{Preview.scheme}://#{Preview.admin_hostname}/oauth/continue?redirect_uri=#{CGI.escape(original_url(request))}"
+    [302, { "location" => continue_url, "cache-control" => "no-store" }, []]
+  end
+
+  # A freshly minted token (see OauthController#continue), proven valid by
+  # the caller already - set it as this domain's own cookie, then redirect
+  # to the same URL with the token stripped out, so it doesn't linger in
+  # browser history or get sent on in a Referer header.
+  def accept_preview_access(request, token)
+    headers = { "location" => original_url(request, except: "preview_auth"), "cache-control" => "no-store" }
+    Rack::Utils.set_cookie_header!(headers, ACCESS_COOKIE, {
+      value: token,
+      domain: ".#{Preview.base_domain}",
+      path: "/",
+      secure: Preview.scheme == "https",
+      httponly: true,
+      same_site: :lax,
+      expires: Time.current + PreviewSignon::PREVIEW_ACCESS_TOKEN_TTL,
+    })
+    [302, headers, []]
+  end
+
+  # Preview.scheme, not request.scheme: the ALB terminates TLS and
+  # forwards plain HTTP on to this pod, so the request itself always
+  # looks like http:// here regardless of what the browser actually
+  # used - same reasoning as Preview#url already uses.
+  def original_url(request, except: nil)
+    query = request.GET.except(*Array(except))
+    query_string = query.empty? ? "" : "?#{URI.encode_www_form(query)}"
+    "#{Preview.scheme}://#{request.host_with_port}#{request.path}#{query_string}"
+  end
 
   def matching_preview(env)
     host = Rack::Request.new(env).host
