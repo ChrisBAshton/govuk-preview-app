@@ -165,6 +165,12 @@ RSpec.describe HostRouter do
       expect([get_status, post_status]).to eq([404, 404])
       expect(proxy).not_to have_received(:call)
     end
+
+    it "proxies its own real-Signon login redirect (e.g. for a draft asset it isn't yet signed in to view)" do
+      described_class.new(app).call(env_for(dependent.hostname, path: "/auth/gds"))
+
+      expect(proxy).to have_received(:call)
+    end
   end
 
   it "does not proxy a publicly_readable dependency preview by its real (internal) slug" do

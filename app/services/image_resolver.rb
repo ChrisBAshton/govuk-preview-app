@@ -14,9 +14,10 @@ require "net/http"
 #   tagged with its release tag (e.g. v1234). We use the latest release, so
 #   a dependency always runs whatever's currently on integration.
 # - any other branch - the app's "Build image from PR" workflow, with
-#   pushing enabled, pushes every PR commit tagged with its full SHA. We
-#   take the branch's current head commit and wait for that image to
-#   appear, since a just-pushed branch's build may still be running.
+#   pushing enabled, tags every PR commit with the branch name itself (see
+#   Whitehall's, as the one repo currently set up this way). We wait for an
+#   image under that exact tag to appear, since a just-pushed branch's
+#   build may still be running.
 # - `local:<tag>` - locally only (PREVIEW_APP_LOCAL_IMAGES=true), an image
 #   built from a developer's own working tree by bin/preview-build and
 #   loaded straight into the kind cluster's node - so code that was never
@@ -67,7 +68,7 @@ class ImageResolver
   def resolve!
     return local_image if self.class.local?(branch)
 
-    tag = branch == "main" ? latest_release_tag : head_sha
+    tag = branch == "main" ? latest_release_tag : branch
     wait_until_published!(tag)
     "#{registry}/#{image_name}:#{tag}"
   end
@@ -99,10 +100,6 @@ private
 
   def latest_release_tag
     github_get("/repos/#{repo_path}/releases/latest").fetch("tag_name")
-  end
-
-  def head_sha
-    github_get("/repos/#{repo_path}/commits/#{ERB::Util.url_encode(branch)}").fetch("sha")
   end
 
   def github_get(path)

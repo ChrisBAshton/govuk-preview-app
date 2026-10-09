@@ -187,10 +187,16 @@ asset-manager:
   port_env_var: PORT
   publicly_readable: true
   # Assets (/media/...), and where Asset Manager redirects to for their files
-  # (/fake-s3/... - see below). Not its API, which changes things.
+  # (/fake-s3/... - see below). Not its API, which changes things. /auth/gds
+  # is its own real-Signon-via-Preview-App login (see PreviewSignon) -
+  # MediaController redirects a browser there itself (gds-sso's own Warden
+  # config) for a draft asset (e.g. one still being edited in Whitehall's
+  # crop tool) it isn't already signed in to view - without this, that
+  # redirect 404s here before ever reaching Asset Manager.
   public_paths:
     - /media/
     - /fake-s3/
+    - /auth/gds
   database:
     adapter: mongodb
     image: mongo:7.0

@@ -25,14 +25,13 @@ RSpec.describe ImageResolver do
     expect(resolver_for("main").resolve!).to eq("ghcr.io/alphagov/govuk/whitehall:v3355")
   end
 
-  it "resolves a branch to its head commit's image, waiting until it's been pushed" do
-    stub_request(:get, "https://api.github.com/repos/alphagov/whitehall/commits/feature%2Fmy-branch")
-      .to_return(json_response({ sha: "abc123" }))
-    manifest = stub_request(:head, "https://ghcr.io/v2/alphagov/govuk/whitehall/manifests/abc123")
+  it "resolves a branch to a tag matching its name, waiting until it's been pushed" do
+    manifest = stub_request(:head, "https://ghcr.io/v2/alphagov/govuk/whitehall/manifests/my-branch")
       .to_return({ status: 404 }, { status: 200 })
 
-    expect(resolver_for("feature/my-branch").resolve!).to eq("ghcr.io/alphagov/govuk/whitehall:abc123")
+    expect(resolver_for("my-branch").resolve!).to eq("ghcr.io/alphagov/govuk/whitehall:my-branch")
     expect(manifest).to have_been_requested.twice
+    expect(WebMock).not_to have_requested(:get, /github\.com/)
   end
 
   it "points the image at PREVIEW_APP_IMAGE_REGISTRY when set (e.g. the ECR pull-through cache)" do
@@ -45,19 +44,12 @@ RSpec.describe ImageResolver do
   end
 
   it "raises a helpful error when the image never appears" do
-    stub_request(:get, %r{api\.github\.com/repos/alphagov/whitehall/commits/}).to_return(json_response({ sha: "abc123" }))
     stub_request(:head, manifest_url).to_return(status: 404)
     allow(ENV).to receive(:fetch).and_call_original
     allow(ENV).to receive(:fetch).with("PREVIEW_APP_IMAGE_WAIT_SECONDS", 1800).and_return("-1")
 
     expect { resolver_for("my-branch").resolve! }
-      .to raise_error(described_class::ImageError, /whitehall:abc123 was published.*Build image from PR/)
-  end
-
-  it "raises when the branch doesn't exist" do
-    stub_request(:get, %r{api\.github\.com/repos/alphagov/whitehall/commits/}).to_return(status: 404)
-
-    expect { resolver_for("no-such-branch").resolve! }.to raise_error(described_class::ImageError, /Couldn't find "no-such-branch"/)
+      .to raise_error(described_class::ImageError, /whitehall:my-branch was published.*Build image from PR/)
   end
 
   describe "local: sources" do
