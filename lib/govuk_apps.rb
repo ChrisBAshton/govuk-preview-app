@@ -12,7 +12,7 @@ module GovukApps
   Definition = Struct.new(
     :name, :repo_url, :port_env_var, :env, :dependencies, :database, :setup_tasks,
     :worker_command, :publicly_readable, :env_aliases, :full_stack_dependencies, :resync_tasks, :memory,
-    :shared_volumes, :self_url_env, :public_paths, keyword_init: true
+    :shared_volumes, :self_url_env, :public_paths, :signon_permissions, keyword_init: true
   )
 
   def self.all
@@ -46,6 +46,10 @@ module GovukApps
         shared_volumes: attrs.fetch("shared_volumes", {}),
         self_url_env: attrs.fetch("self_url_env", []),
         public_paths: attrs["public_paths"],
+        # What PreviewOauthController grants a real, Signon-authenticated
+        # visitor once inside this app's own preview (see PreviewSignon) -
+        # not every app needs more than the bare minimum to sign in.
+        signon_permissions: attrs.fetch("signon_permissions", %w[signin]),
       )
     end
   end

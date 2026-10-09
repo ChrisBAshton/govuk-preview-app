@@ -5,6 +5,14 @@ Rails.application.routes.draw do
     GovukHealthcheck::SidekiqRedis,
   )
 
+  # Preview App standing in for Signon itself, so every previewed app gets
+  # a real login instead of the old mock auth anyone could reach - see
+  # OauthController/PreviewSignon. Paths fixed by gds-sso's own real OAuth2
+  # strategy, not ours to choose.
+  get "/oauth/authorize", to: "oauth#authorize"
+  post "/oauth/access_token", to: "oauth_tokens#token"
+  get "/user.json", to: "oauth_tokens#user_info"
+
   resources :previews, only: %i[index new create destroy] do
     member do
       # Named so as not to shadow Kernel#sleep, or Ruby's `retry` keyword.

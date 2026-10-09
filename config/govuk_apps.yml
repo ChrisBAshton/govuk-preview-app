@@ -248,6 +248,14 @@ whitehall:
     - asset-manager
     - frontend
     - draft-frontend
+  # Matches db/seeds.rb's own "Test user" - unchanged from what every
+  # Whitehall preview already granted under mock auth.
+  signon_permissions:
+    - signin
+    - GDS Admin
+    - GDS Editor
+    - Managing Editor
+    - Sidekiq Admin
   # In a full stack, link "View on website"/"Preview on website" (and every
   # other public link Whitehall builds) to this preview's own Frontends, and
   # build asset URLs (e.g. a lead image's) from its own Asset Manager.
