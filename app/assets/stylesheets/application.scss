@@ -59,3 +59,18 @@ $app-page-width: 1200px;
   text-decoration: underline;
   cursor: pointer;
 }
+
+// A pod's raw log output - see PreviewsController#logs. Wraps rather than
+// scrolling sideways (a log line can be arbitrarily long), but keeps its
+// own vertical scroll so one huge preview doesn't push the page's actual
+// controls (Refresh, the Web/Worker switcher) off screen.
+.app-logs {
+  @include govuk-font($size: 16);
+  max-height: 75vh;
+  overflow-y: auto;
+  padding: govuk-spacing(3);
+  border: 1px solid govuk-colour("mid-grey");
+  background-color: govuk-colour("black", $variant: "tint-95");
+  white-space: pre-wrap;
+  word-break: break-word;
+}

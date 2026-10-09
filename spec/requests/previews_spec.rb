@@ -29,6 +29,23 @@ RSpec.describe "Previews" do
       expect(response.body).to include(">Switch app<")
     end
 
+    it "labels the row actions column" do
+      get previews_path
+
+      expect(Capybara::Node::Simple.new(response.body)).to have_css("table thead th", text: "Actions")
+    end
+
+    it "offers viewing a dependency's own logs, even though it has none of the stack-wide actions" do
+      parent = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running)
+      dependency = create(:preview, app_name: "publishing-api", branch: "main", parent: parent, status: :running)
+
+      get previews_path
+
+      row = Capybara::Node::Simple.new(response.body).all("table tbody tr")[1]
+      expect(preview_actions_in(row)).to eq(["View logs"])
+      expect(row).to have_css("a.govuk-link[href='#{logs_preview_path(dependency)}']")
+    end
+
     it "links a publicly_readable dependency at its own public hostname, rather than showing it as internal-only" do
       parent = create(:preview, app_name: "publishing-api", branch: "my-branch", status: :running)
       dependent = create(:preview, app_name: "content-store", branch: "main", parent: parent, status: :running)
@@ -191,9 +208,9 @@ RSpec.describe "Previews" do
 
       rows = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, preview_actions_in(row)] }
       expect(rows).to eq(
-        "core-one" => ["Sleep", "Add full stack", "Delete"],
-        "full-one" => ["Sleep", "Remove full stack", "Delete"],
-        "no-extras" => %w[Sleep Delete],
+        "core-one" => ["View logs", "Sleep", "Add full stack", "Delete"],
+        "full-one" => ["View logs", "Sleep", "Remove full stack", "Delete"],
+        "no-extras" => ["View logs", "Sleep", "Delete"],
       )
     end
 
@@ -206,9 +223,9 @@ RSpec.describe "Previews" do
 
       rows = Capybara::Node::Simple.new(response.body).all("table tbody tr").to_h { |row| [row.all("td")[1].text, preview_actions_in(row)] }
       expect(rows).to eq(
-        "running-one" => %w[Sleep Delete],
-        "sleeping-one" => %w[Wake Delete],
-        "failed-one" => %w[Retry Delete],
+        "running-one" => ["View logs", "Sleep", "Delete"],
+        "sleeping-one" => ["View logs", "Wake", "Delete"],
+        "failed-one" => ["View logs", "Retry", "Delete"],
       )
     end
   end
@@ -258,6 +275,79 @@ RSpec.describe "Previews" do
     end
   end
 
+  describe "GET /previews/:id/logs" do
+    it "shows the pod's recent log output" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+      runner = instance_double(KubernetesRunner, log_components: %w[web], logs: "line one\nline two")
+      allow(KubernetesRunner).to receive(:new).with(preview).and_return(runner)
+
+      get logs_preview_path(preview)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Logs: frontend (my-branch)", "line one", "line two")
+      expect(runner).to have_received(:logs).with(component: "web")
+    end
+
+    it "works for a dependency's own id, not just a top-level preview's" do
+      parent = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running)
+      dependency = create(:preview, app_name: "publishing-api", branch: "main", parent: parent, status: :running)
+      runner = instance_double(KubernetesRunner, log_components: %w[web], logs: "log output specific to the dependency")
+      allow(KubernetesRunner).to receive(:new).with(dependency).and_return(runner)
+
+      get logs_preview_path(dependency)
+
+      expect(response.body).to include("log output specific to the dependency")
+    end
+
+    it "offers a Web/Worker switcher for an app that runs a separate worker pod, defaulting to web" do
+      preview = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running)
+      runner = instance_double(KubernetesRunner, log_components: %w[web worker])
+      allow(KubernetesRunner).to receive(:new).with(preview).and_return(runner)
+      allow(runner).to receive(:logs).with(component: "web").and_return("web log")
+      allow(runner).to receive(:logs).with(component: "worker").and_return("worker log")
+
+      get logs_preview_path(preview)
+      page = Capybara::Node::Simple.new(response.body)
+      expect(response.body).to include("web log")
+      expect(page).to have_css("strong", text: "Web")
+      expect(page).to have_link("Worker", href: logs_preview_path(preview, component: "worker"))
+
+      get logs_preview_path(preview, component: "worker")
+      expect(response.body).to include("worker log")
+    end
+
+    it "doesn't offer a switcher for an app with no separate worker" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+      runner = instance_double(KubernetesRunner, log_components: %w[web], logs: "web log")
+      allow(KubernetesRunner).to receive(:new).with(preview).and_return(runner)
+
+      get logs_preview_path(preview)
+
+      expect(response.body).not_to include("Worker")
+    end
+
+    it "falls back to web logs for an unrecognised component" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
+      runner = instance_double(KubernetesRunner, log_components: %w[web])
+      allow(KubernetesRunner).to receive(:new).with(preview).and_return(runner)
+      allow(runner).to receive(:logs).with(component: "web").and_return("web log")
+
+      get logs_preview_path(preview, component: "nonsense")
+
+      expect(response.body).to include("web log")
+    end
+
+    it "says so when there's no pod to read logs from yet" do
+      preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :waiting_for_image)
+      runner = instance_double(KubernetesRunner, log_components: %w[web], logs: nil)
+      allow(KubernetesRunner).to receive(:new).with(preview).and_return(runner)
+
+      get logs_preview_path(preview)
+
+      expect(response.body).to include("No pod found")
+    end
+  end
+
   describe "the previews page's row actions" do
     it "are links separated by pipes, with Delete going to a confirmation page and saying which preview each is for" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :running)
@@ -265,6 +355,7 @@ RSpec.describe "Previews" do
       get previews_path
 
       actions = Capybara::Node::Simple.new(response.body).find(".app-actions")
+      expect(actions).to have_css("a.govuk-link[href='#{logs_preview_path(preview)}']", text: "View logs frontend (my-branch)")
       expect(actions).to have_css("button.govuk-link", text: "Sleep frontend (my-branch)")
       expect(actions).to have_css("a.govuk-link.gem-link--destructive[href='#{confirm_destroy_preview_path(preview)}']", text: "Delete frontend (my-branch)")
       expect(actions).to have_css(".app-actions__separator[aria-hidden='true']", text: "|")

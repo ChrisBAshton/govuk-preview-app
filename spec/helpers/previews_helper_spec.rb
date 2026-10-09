@@ -2,14 +2,24 @@ require "rails_helper"
 
 RSpec.describe PreviewsHelper do
   describe "#preview_actions" do
-    it "offers only deleting a preview of an app no longer in the manifest" do
+    it "offers viewing logs and deleting a preview of an app no longer in the manifest, nothing else" do
       preview = create(:preview, app_name: "frontend", branch: "my-branch", status: :failed)
       preview.update_column(:app_name, "removed-app")
 
       html = helper.preview_actions(preview)
 
-      expect(html).to include("Delete")
+      expect(html).to include("View logs", "Delete")
       expect(html).not_to include("Retry", "Wake", "Sleep")
+    end
+
+    it "offers only viewing logs for a dependency - the rest act on its whole stack, via the top-level preview" do
+      parent = create(:preview, app_name: "whitehall", branch: "my-branch", status: :running)
+      dependency = create(:preview, app_name: "publishing-api", branch: "main", parent: parent, status: :running)
+
+      html = helper.preview_actions(dependency)
+
+      expect(html).to include("View logs")
+      expect(html).not_to include("Sleep", "Delete")
     end
   end
 

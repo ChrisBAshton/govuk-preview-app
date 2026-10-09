@@ -129,6 +129,36 @@ class KubernetesRunner
     "#{container_name}.#{KubernetesApi.namespace}.svc.cluster.local"
   end
 
+  DEFAULT_LOG_LINES = 300
+
+  # "web" always; "worker" too, whenever the app runs one at all - whether
+  # as its own Deployment, or as a second container inside the web pod
+  # (see #worker_in_web_pod?); #logs below reads the right one either way.
+  # Guarded against an app since removed from the manifest (see
+  # Preview#app_known?), which #worker_in_web_pod? itself isn't safe to
+  # call for.
+  def log_components
+    return %w[web] unless app
+
+    app.worker_command.present? ? %w[web worker] : %w[web]
+  end
+
+  # The most recent lines of a component's own container's log - nil if no
+  # pod exists for it yet (still starting, asleep, or never built).
+  def logs(component: "web", tail_lines: DEFAULT_LOG_LINES)
+    separate_worker_pod = component == "worker" && !worker_in_web_pod?
+    deployment = separate_worker_pod ? worker_container_name : container_name
+    pod = api.get(api.path("v1", "pods"), labelSelector: "app.kubernetes.io/instance=#{deployment}").fetch("items", []).first
+    return nil if pod.nil?
+
+    params = { tailLines: tail_lines }
+    # Same pod as "web" - only the container differs.
+    params[:container] = "worker" if component == "worker" && !separate_worker_pod
+    api.get_text(api.path("v1", "pods", pod.dig("metadata", "name"), "log"), params)
+  rescue KubernetesApi::Error => e
+    "(couldn't read logs: #{e.message})"
+  end
+
   # The fixes ConfigOverrides used to write into a checkout before
   # `docker build` - mounted into every pod instead, since the image is
   # prebuilt and can't be modified.
