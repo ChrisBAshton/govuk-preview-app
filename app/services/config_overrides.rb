@@ -35,6 +35,18 @@
 #   no port only matches the scheme's default one, and previews are on
 #   :8080.) Frontend sets its policy in an initializer of its own, which
 #   runs before this one.
+# - gds-sso apps also validate *API* bearer tokens for real under
+#   GDS_SSO_STRATEGY=real (PreviewEnv sets this on every app, for
+#   HostRouter's benefit - see its own comment) - by calling back to this
+#   same PreviewSignon-backed /user.json, which only ever recognises a
+#   token issued through its own OAuth2 exchange. So a server-to-server
+#   call between two previews with any other bearer token (e.g.
+#   Whitehall's own, calling Publishing API's API) gets rejected, even
+#   though that call never goes near HostRouter or the internet at all -
+#   it's cluster-internal, already walled off by NetworkPolicy. Forcing
+#   Warden::OAuth2 back to gds-sso's own mock token model (accepts any
+#   token as a trusted dummy API user) restores that, independently of
+#   the real strategy still gating actual browser logins.
 class ConfigOverrides
   FILENAME = "zzz_preview_app_overrides.rb".freeze
 
@@ -52,6 +64,9 @@ class ConfigOverrides
       # arguments deletes it.
       if (policy = Rails.application.config.content_security_policy) && policy.directives["img-src"]
         policy.directives["img-src"] += [#{Preview.csp_source.inspect}]
+      end
+      if defined?(Warden::OAuth2) && defined?(GDS::SSO::MockBearerToken)
+        Warden::OAuth2.config.token_model = GDS::SSO::MockBearerToken
       end
     RUBY
   end

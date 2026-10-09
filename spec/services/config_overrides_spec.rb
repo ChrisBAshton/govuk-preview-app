@@ -33,5 +33,16 @@ RSpec.describe ConfigOverrides do
     it "doesn't patch any app's own code - e.g. Whitehall's public links come from env vars instead" do
       expect(described_class.content).not_to include("Edition", "prepend", "Whitehall")
     end
+
+    it "forces gds-sso's mock bearer token model, even under GDS_SSO_STRATEGY=real - API calls between previews never reach HostRouter or the internet at all, so this doesn't reopen what that strategy is really for" do
+      snippet = described_class.content.lines.drop_while { |line| !line.include?("Warden::OAuth2") }.join
+      Warden::OAuth2.config.token_model = GDS::SSO::BearerToken
+
+      eval(snippet) # rubocop:disable Security/Eval
+
+      expect(Warden::OAuth2.config.token_model).to eq(GDS::SSO::MockBearerToken)
+    ensure
+      Warden::OAuth2.config.token_model = GDS::SSO::MockBearerToken
+    end
   end
 end
