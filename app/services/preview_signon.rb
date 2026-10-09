@@ -38,16 +38,26 @@ module PreviewSignon
     @redis ||= RedisClient.new(url: ENV.fetch("REDIS_URL", "redis://127.0.0.1:6379"))
   end
 
-  # Only true for a real, currently-running preview's own callback URL -
-  # the same universe HostRouter would otherwise proxy a request to, never
-  # an arbitrary external URL. Scoped to an actual running Preview (not
-  # just "any subdomain of ours") as defence in depth, reusing the same
-  # lookup HostRouter itself uses to route a request.
+  # Only true for a real, currently-running preview's own gds-sso callback
+  # URL - the fixed path gds-sso's real OAuth2 strategy always uses, never
+  # an arbitrary page. See #valid_preview_url? for the looser check used
+  # to send a browser back to wherever it actually asked for.
   def self.valid_redirect_uri?(redirect_uri)
-    uri = URI.parse(redirect_uri)
-    return false unless uri.path == "/auth/gds/callback"
+    valid_preview_url?(redirect_uri) { |uri| uri.path == "/auth/gds/callback" }
+  end
+
+  # True for any URL under a real, currently-running preview's own
+  # hostname - the same universe HostRouter would otherwise proxy a
+  # request to, never an arbitrary external URL. Scoped to an actual
+  # running Preview (not just "any subdomain of ours") as defence in
+  # depth, reusing the same lookup HostRouter itself uses to route a
+  # request. Used by OauthController#continue to return a browser to
+  # whichever page of a preview it was actually trying to reach.
+  def self.valid_preview_url?(url)
+    uri = URI.parse(url)
     return false unless uri.scheme == Preview.scheme
     return false unless uri.host&.end_with?(".#{Preview.base_domain}")
+    return false if block_given? && !yield(uri)
 
     prefix = uri.host.delete_suffix(".#{Preview.base_domain}")
     routable = Preview.where(status: HostRouter::ROUTABLE_STATUSES)
@@ -87,6 +97,35 @@ module PreviewSignon
     raw = redis.call("GET", "token:#{token}")
     raw && JSON.parse(raw)
   end
+
+  # Handing a browser proof of a real Preview App login across to the
+  # (temporarily, see Preview.base_domain's own comment) *different*
+  # domain previews live under - a signed cookie set on Preview App's own
+  # hostname can never be sent there at all (no common suffix to share,
+  # never mind scoping it wider), so this has to travel some other way.
+  # Stateless (Rails' own message_verifier, not Redis): nothing else here
+  # needs to invalidate a specific one early, and it only ever has to
+  # outlive one redirect round trip, so there's no reason to add a store
+  # for it. See HostRouter, where this is both issued-for and verified.
+  PREVIEW_ACCESS_TOKEN_TTL = 1.day
+
+  def self.issue_preview_access_token(user)
+    message_verifier.generate({ "uid" => user.uid }, expires_in: PREVIEW_ACCESS_TOKEN_TTL)
+  end
+
+  # The uid alone, not a full user payload like #user_for_token - this
+  # only ever answers "is this a real, currently valid Preview App login",
+  # the same yes/no HostRouter would otherwise get from env["warden"].
+  def self.uid_for_preview_access_token(token)
+    message_verifier.verify(token)["uid"]
+  rescue ActiveSupport::MessageVerifier::InvalidSignature
+    nil
+  end
+
+  def self.message_verifier
+    Rails.application.message_verifier(:preview_access)
+  end
+  private_class_method :message_verifier
 
   def self.challenge_for(verifier)
     Base64.urlsafe_encode64(Digest::SHA256.digest(verifier), padding: false)

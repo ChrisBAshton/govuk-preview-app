@@ -12,6 +12,9 @@ Rails.application.routes.draw do
   get "/oauth/authorize", to: "oauth#authorize"
   post "/oauth/access_token", to: "oauth_tokens#token"
   get "/user.json", to: "oauth_tokens#user_info"
+  # Where HostRouter sends a browser back once it has a real session -
+  # see OauthController#continue.
+  get "/oauth/continue", to: "oauth#continue"
 
   resources :previews, only: %i[index new create destroy] do
     member do
