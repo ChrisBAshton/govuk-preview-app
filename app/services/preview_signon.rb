@@ -85,7 +85,15 @@ module PreviewSignon
     redis.call("DEL", "code:#{code}")
     data = JSON.parse(raw)
     raise AuthorizationError, "client_id mismatch" unless data["client_id"] == client_id
-    raise AuthorizationError, "redirect_uri mismatch" unless data["redirect_uri"] == redirect_uri
+    # Not a plain string comparison: OmniAuth's own callback_url (what a
+    # real gds-sso client sends here) is full_host + callback_path +
+    # query_string - and query_string is the *current* request's own, so
+    # at this, the callback request itself, it always includes this same
+    # code/state we're busy redeeming. The one captured at authorize time
+    # (data["redirect_uri"]) never has one, since nothing had been issued
+    # yet when that request came in - so only the part before any "?" is
+    # ever meaningfully comparable, same as a real OAuth2 provider does.
+    raise AuthorizationError, "redirect_uri mismatch" unless data["redirect_uri"] == redirect_uri.split("?").first
     raise AuthorizationError, "code_verifier mismatch" unless challenge_for(code_verifier) == data["code_challenge"]
 
     token = SecureRandom.urlsafe_base64(32)
