@@ -18,7 +18,14 @@
       },
       {
         text: "Switch app",
-        href: Plek.find("signon"),
+        # external_url_for, not find: GOVUK_APP_DOMAIN (what find uses) is
+        # "" (empty) in the shared govuk-apps-env ConfigMap every app
+        # gets - only GOVUK_APP_DOMAIN_EXTERNAL is ever actually set, to
+        # the real public domain, which external_url_for reads instead.
+        # That's deliberate upstream: internal service-to-service lookups
+        # (find) and a link meant for a human's browser (external_url_for)
+        # aren't always the same thing - this is the latter.
+        href: Plek.external_url_for("signon"),
       },
     ],
   } %>
