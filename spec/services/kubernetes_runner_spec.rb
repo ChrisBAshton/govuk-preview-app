@@ -73,7 +73,7 @@ RSpec.describe KubernetesRunner do
         .with(query: hash_including("labelSelector" => "app.kubernetes.io/instance=#{runner.container_name}"))
         .to_return(json_response({ items: [{ metadata: { name: "web-pod" } }] }))
       stub_request(:get, k8s_url(api.path("v1", "pods", "web-pod", "log")))
-        .with(query: { "tailLines" => "300" })
+        .with(query: { "tailLines" => "300", "container" => "app" })
         .to_return(status: 200, body: "web log output")
 
       expect(runner.logs).to eq("web log output")
@@ -84,10 +84,22 @@ RSpec.describe KubernetesRunner do
         .with(query: hash_including("labelSelector" => "app.kubernetes.io/instance=#{runner.worker_container_name}"))
         .to_return(json_response({ items: [{ metadata: { name: "worker-pod" } }] }))
       stub_request(:get, k8s_url(api.path("v1", "pods", "worker-pod", "log")))
-        .with(query: { "tailLines" => "300" })
+        .with(query: { "tailLines" => "300", "container" => "app" })
         .to_return(status: 200, body: "worker log output")
 
       expect(runner.logs(component: "worker")).to eq("worker log output")
+    end
+
+    it "names the web container explicitly, for a worker-in-web-pod app's web pod - Kubernetes won't default when there's more than one" do
+      whitehall_runner = described_class.new(create(:preview, app_name: "whitehall", branch: "my-branch"), api: api)
+      stub_request(:get, k8s_url(api.path("v1", "pods")))
+        .with(query: hash_including("labelSelector" => "app.kubernetes.io/instance=#{whitehall_runner.container_name}"))
+        .to_return(json_response({ items: [{ metadata: { name: "whitehall-web-pod" } }] }))
+      stub_request(:get, k8s_url(api.path("v1", "pods", "whitehall-web-pod", "log")))
+        .with(query: { "tailLines" => "300", "container" => "app" })
+        .to_return(status: 200, body: "web log output")
+
+      expect(whitehall_runner.logs).to eq("web log output")
     end
 
     it "reads the worker container within the web pod, for an app whose worker runs there instead" do
