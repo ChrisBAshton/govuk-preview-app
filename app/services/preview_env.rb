@@ -11,9 +11,13 @@ require "securerandom"
 # (a few, e.g. Whitehall, always enable it regardless, in which case this
 # is simply a no-op). There's no separate asset-serving layer here, so
 # every preview needs Rails to serve its own assets directly.
-# GDS_SSO_STRATEGY: forces gds-sso's mock auth strategy regardless of
-# RAILS_ENV (verified working for Preview App's own gds-sso setup, and for
-# Whitehall/Publishing API's) - harmless for apps that don't use gds-sso.
+# GDS_SSO_STRATEGY/GDS_SSO_OAUTH_ID/GDS_SSO_OAUTH_SECRET/
+# PLEK_SERVICE_SIGNON_URI: forces gds-sso's *real* strategy, pointed at
+# Preview App's own OauthController instead of the real Signon - every
+# preview gets a genuine Signon-backed login rather than the old mock
+# strategy anyone could reach with no credentials at all. See
+# PreviewSignon for the full design; harmless for apps that don't use
+# gds-sso.
 # REDIS_URL: govuk_sidekiq's railtie eagerly connects to Redis at boot for
 # *any* rake task, not just when a worker actually runs - so any app using
 # that gem (most GOV.UK admin apps) needs a reachable Redis just to boot.
@@ -56,7 +60,10 @@ module PreviewEnv
       app.port_env_var => KubernetesRunner::APP_PORT,
       "SECRET_KEY_BASE" => SecureRandom.hex(32),
       "RAILS_SERVE_STATIC_FILES" => "true",
-      "GDS_SSO_STRATEGY" => "mock",
+      "GDS_SSO_STRATEGY" => "real",
+      "GDS_SSO_OAUTH_ID" => app.name,
+      "GDS_SSO_OAUTH_SECRET" => PreviewSignon::CLIENT_SECRET,
+      "PLEK_SERVICE_SIGNON_URI" => "#{Preview.scheme}://#{Preview.base_domain}",
       "REDIS_URL" => StackRedis.url_for(preview),
       "GOVUK_ENVIRONMENT" => "integration",
       "GOVUK_WEBSITE_ROOT" => "https://www.integration.publishing.service.gov.uk",
