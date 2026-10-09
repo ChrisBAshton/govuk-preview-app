@@ -375,6 +375,11 @@ publisher:
     # Not a real secret - Publisher signs its draft preview links with this
     # (PathsHelper#jwt_token), and creating an edition crashes without one.
     JWT_AUTH_SECRET: preview-jwt-secret
+    # Publisher emails alert groups via GOV.UK Notify on every edition
+    # action (EventNotifierService), and with no real Notify API key that
+    # crashes - e.g. creating an edition fails. Its production.rb turns off
+    # delivery when this is set, so no email is ever sent from a preview.
+    DISABLE_EMAIL: "1"
 
 # Not run alongside it (so those features won't work in a preview): Link
 # Checker API. Reads published content from the real GOV.UK Content Store.
