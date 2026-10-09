@@ -31,6 +31,12 @@ class OauthTokensController < ActionController::API
     )
     render json: { access_token: access_token, token_type: "bearer" }
   rescue PreviewSignon::AuthorizationError => e
+    # The oauth2 gem (gds-sso's own HTTP client) only ever raises a
+    # generic OAuth2::Error on any non-2xx response, which OmniAuth then
+    # reports to the browser as a bare "invalid_credentials" - this is
+    # the only place the real reason (which check in
+    # PreviewSignon.exchange_code failed) is still visible at all.
+    Rails.logger.warn("OauthTokensController#token: #{e.message} (client_id=#{client_id.inspect}, redirect_uri=#{params[:redirect_uri].inspect})")
     render json: { error: "invalid_grant", error_description: e.message }, status: :bad_request
   end
 
