@@ -53,10 +53,16 @@ Rails.application.configure do
   # Only use :id for inspections in production.
   config.active_record.attributes_for_inspect = [:id]
 
-  # Allow the app's own hostname, and any preview subdomain of it (see
-  # HostRouter) - defaults to the local dev domain, but is the same
-  # PREVIEW_APP_BASE_DOMAIN env var used on integration.
-  base_domain = ENV.fetch("PREVIEW_APP_BASE_DOMAIN", "govuk-preview-app.dev.gov.uk")
+  # Allow the app's own hostname, and any preview subdomain (see
+  # HostRouter) - the same domain locally and normally on integration too,
+  # but PREVIEW_HOSTNAME_BASE_DOMAIN can point previews at a *different*
+  # domain than the app's own hostname (see Preview.base_domain's own
+  # comment - duplicated as plain ENV reads here, not Preview.*, since
+  # this file runs too early in Rails' boot for autoloading to resolve
+  # app/models yet).
+  admin_hostname = ENV.fetch("PREVIEW_APP_BASE_DOMAIN", "govuk-preview-app.dev.gov.uk")
+  base_domain = ENV.fetch("PREVIEW_HOSTNAME_BASE_DOMAIN", admin_hostname)
+  config.hosts << admin_hostname
   config.hosts << base_domain
   config.hosts << /.*\.#{Regexp.escape(base_domain)}/
 

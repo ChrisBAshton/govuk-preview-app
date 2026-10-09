@@ -95,9 +95,32 @@ RSpec.describe Preview do
     end
   end
 
-  describe ".base_domain" do
+  describe ".admin_hostname" do
     it "defaults to the govuk-preview-app.dev.gov.uk domain" do
-      expect(described_class.base_domain).to eq("govuk-preview-app.dev.gov.uk")
+      expect(described_class.admin_hostname).to eq("govuk-preview-app.dev.gov.uk")
+    end
+
+    it "reads PREVIEW_APP_BASE_DOMAIN when set" do
+      ENV["PREVIEW_APP_BASE_DOMAIN"] = "govuk-preview-app.example.com"
+      expect(described_class.admin_hostname).to eq("govuk-preview-app.example.com")
+    ensure
+      ENV.delete("PREVIEW_APP_BASE_DOMAIN")
+    end
+  end
+
+  describe ".base_domain" do
+    it "defaults to the same domain as admin_hostname" do
+      expect(described_class.base_domain).to eq(described_class.admin_hostname)
+    end
+
+    it "reads PREVIEW_HOSTNAME_BASE_DOMAIN when set, independently of admin_hostname" do
+      ENV["PREVIEW_APP_BASE_DOMAIN"] = "govuk-preview-app.example.com"
+      ENV["PREVIEW_HOSTNAME_BASE_DOMAIN"] = "govuk-preview-app.eks.example.com"
+      expect(described_class.base_domain).to eq("govuk-preview-app.eks.example.com")
+      expect(described_class.admin_hostname).to eq("govuk-preview-app.example.com")
+    ensure
+      ENV.delete("PREVIEW_APP_BASE_DOMAIN")
+      ENV.delete("PREVIEW_HOSTNAME_BASE_DOMAIN")
     end
   end
 

@@ -39,8 +39,20 @@ class Preview < ApplicationRecord
   before_validation :ignore_full_stack_without_option
   before_validation :generate_public_hostname, on: :create
 
-  def self.base_domain
+  # Preview App's own fixed hostname (its admin UI, and where
+  # PreviewSignon's OAuth endpoints live) - not necessarily the same
+  # domain previews themselves live under, see .base_domain.
+  def self.admin_hostname
     ENV.fetch("PREVIEW_APP_BASE_DOMAIN", "govuk-preview-app.dev.gov.uk")
+  end
+
+  # The domain previews live under - defaults to admin_hostname (true
+  # locally, and wherever PREVIEW_HOSTNAME_BASE_DOMAIN isn't set), but can
+  # be pointed elsewhere via PREVIEW_HOSTNAME_BASE_DOMAIN - e.g. on
+  # Integration, temporarily, while *.admin_hostname's own wildcard cert
+  # doesn't yet exist (see alphagov/govuk-helm-charts#4550).
+  def self.base_domain
+    ENV.fetch("PREVIEW_HOSTNAME_BASE_DOMAIN", admin_hostname)
   end
 
   # http locally (nothing terminates TLS in the kind cluster); integration
