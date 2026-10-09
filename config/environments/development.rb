@@ -64,8 +64,11 @@ Rails.application.configure do
   # Allow the app's own hostname, and any preview subdomain (see
   # HostRouter) - an unmatched/stale preview subdomain then gets a normal
   # Rails 404 rather than "Blocked hosts". See production.rb's own
-  # comment on why admin_hostname and base_domain are both needed.
-  config.hosts << Preview.admin_hostname
-  config.hosts << Preview.base_domain
-  config.hosts << /.*\.#{Regexp.escape(Preview.base_domain)}/
+  # comment on why admin_hostname and base_domain are both needed, and
+  # why they're plain ENV reads rather than Preview.* here.
+  admin_hostname = ENV.fetch("PREVIEW_APP_BASE_DOMAIN", "govuk-preview-app.dev.gov.uk")
+  base_domain = ENV.fetch("PREVIEW_HOSTNAME_BASE_DOMAIN", admin_hostname)
+  config.hosts << admin_hostname
+  config.hosts << base_domain
+  config.hosts << /.*\.#{Regexp.escape(base_domain)}/
 end
