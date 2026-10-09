@@ -64,7 +64,11 @@ private
   end
 
   def redirect_to_login(request)
-    continue_url = "#{Preview.scheme}://#{Preview.admin_hostname}/oauth/continue?redirect_uri=#{CGI.escape(original_url(request))}"
+    # Preview App's own admin host sits behind the exact same local port as
+    # every preview (see Preview.port_suffix's own comment) - omitting it
+    # here sent a browser to the default port instead, where nothing's
+    # listening locally.
+    continue_url = "#{Preview.scheme}://#{Preview.admin_hostname}#{Preview.port_suffix}/oauth/continue?redirect_uri=#{CGI.escape(original_url(request))}"
     [302, { "location" => continue_url, "cache-control" => "no-store" }, []]
   end
 
