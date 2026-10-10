@@ -69,6 +69,15 @@ module PreviewEnv
       "SECRET_KEY_BASE" => SecureRandom.hex(32),
       "RAILS_SERVE_STATIC_FILES" => "true",
       "GDS_SSO_STRATEGY" => "mock",
+      # Not a GOV.UK/Plek convention any app's own code reads - only
+      # ConfigOverrides does, for the rare case (e.g. Asset Manager's own
+      # MediaController) where an app needs to tell a request aimed at its
+      # own pod (PreviewBuilder#build_dependencies!'s PLEK_SERVICE_*_URI,
+      # the same address every *other* app reaches it at) apart from one
+      # aimed at its preview's public hostname - Plek.find(app_name) from
+      # inside an app's own pod just falls back to its real GOV.UK address,
+      # never this one.
+      "PREVIEW_APP_INTERNAL_URL" => "http://#{KubernetesRunner.new(preview).container_name}",
       "REDIS_URL" => StackRedis.url_for(preview),
       "GOVUK_ENVIRONMENT" => "integration",
       "GOVUK_WEBSITE_ROOT" => "https://www.integration.publishing.service.gov.uk",
