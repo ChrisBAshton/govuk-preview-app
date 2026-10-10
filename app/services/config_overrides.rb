@@ -57,6 +57,33 @@
 #   differently-looked-up dummy user, as a 403. Granting every previewed
 #   app's dummy user that permission sidesteps the ambiguity entirely,
 #   rather than fixing gds-sso's own race.
+# - Asset Manager's own MediaController requires a real Signon session to
+#   read a draft asset (e.g. a lead image still being edited in Whitehall),
+#   on top of HostRouter's own gate - rendering several on one page used
+#   to mean several concurrent OAuth round trips racing each other, with
+#   some arriving out of order and failing. Reachable only at an
+#   unguessable preview hostname already, with nothing sensitive ever
+#   going through it, a preview's own Asset Manager doesn't need that
+#   second gate at all - so GET/HEAD requests (the only verbs its own
+#   media-serving routes ever accept) skip it entirely.
+# - that same MediaController also can't tell a request from another
+#   preview's own pod (e.g. Whitehall's worker, reading an asset's file back
+#   to build a cropped thumbnail) apart from a real browser's: it compares
+#   the request's Host header against Plek.find("asset-manager") - which,
+#   evaluated from inside Asset Manager's own pod (nothing ever points
+#   Asset Manager at itself the way PreviewBuilder points everything
+#   *else* at it), just falls back to the real asset-manager.www.gov.uk.
+#   So it always redirects such a request to its own public hostname
+#   instead of serving it directly - fine for a browser, useless for
+#   another pod, which can never reach a preview's public hostname at all
+#   (that only resolves - and only on its external port - outside the
+#   cluster). Recognising PREVIEW_APP_INTERNAL_URL (see PreviewEnv) as its
+#   own internal host fixes that for every caller of
+#   requested_from_internal_host?, including the one case it still left
+#   broken even once recognised: it serves a real asset by redirecting to
+#   its own fake-S3 file at its public hostname (self_url_env's
+#   FAKE_S3_HOST) - also unreachable from another pod - so an internal
+#   caller is redirected there via PREVIEW_APP_INTERNAL_URL instead.
 class ConfigOverrides
   FILENAME = "zzz_preview_app_overrides.rb".freeze
 
@@ -80,6 +107,44 @@ class ConfigOverrides
       end
       if defined?(GDS::SSO::Config)
         GDS::SSO::Config.additional_mock_permissions_required = ["Manage all Assets"]
+      end
+      # config/initializers/* run before Rails eager-loads the app's own
+      # classes (that happens in the Finisher, afterwards) - so a bare
+      # `if defined?(MediaController)` here is always false in production,
+      # silently skipping this entirely. to_prepare runs once that's done,
+      # the standard hook for patching an autoloaded class from outside it.
+      Rails.application.config.to_prepare do
+        if defined?(MediaController)
+          MediaController.class_eval do
+            protected
+
+            def authorized_for_asset?(_asset) = true
+
+            def redirect_to_draft_assets_host_for?(_asset) = false
+
+            def requested_from_internal_host?
+              request.host == URI.parse(ENV.fetch("PREVIEW_APP_INTERNAL_URL")).host
+            end
+
+            def proxy_to_s3_via_nginx(asset)
+              headers["ETag"] = %("\#{asset.etag}")
+              headers["Last-Modified"] = asset.last_modified.httpdate
+              headers["Content-Disposition"] = AssetManager.content_disposition.header_for(asset)
+
+              if request.fresh?(response)
+                head :not_modified
+              elsif AssetManager.s3.fake?
+                url = Services.cloud_storage.presigned_url_for(asset, http_method: request.request_method)
+                url = ENV.fetch("PREVIEW_APP_INTERNAL_URL") + URI.parse(url).path if requested_from_internal_host?
+                redirect_to url
+              else
+                url = Services.cloud_storage.presigned_url_for(asset, http_method: request.request_method)
+                headers["X-Accel-Redirect"] = "/cloud-storage-proxy/\#{url}"
+                head :ok, content_type: content_type(asset)
+              end
+            end
+          end
+        end
       end
     RUBY
   end
