@@ -4,20 +4,23 @@ require "digest"
 require "base64"
 
 # govuk-preview-app acting as its own minimal Signon stand-in for every
-# previewed app (see OauthController), replacing the old GDS_SSO_STRATEGY
-# of "mock" previews ran under - which authenticated *any* visitor as a
-# seeded test user, no login at all. A random person who found a preview's
-# URL could sign in as a full admin and start editing/publishing.
+# previewed app (see OauthController) - a previewed app's gds-sso strategy
+# could be pointed at this host instead of the real Signon, going through
+# an actual OAuth2 Authorization Code + PKCE exchange, with "logging in"
+# just reusing whichever real Signon session already authenticated
+# someone to Preview App itself (OauthController#authorize requires that,
+# via ApplicationController's own authenticate_user!), no separate consent
+# screen - mirroring the same no-consent trust real Signon extends to
+# first-party GOV.UK apps (see its config/initializers/doorkeeper.rb).
 #
-# Now a previewed app's real gds-sso strategy is pointed at this host
-# instead of the real Signon (see PreviewEnv's PLEK_SERVICE_SIGNON_URI),
-# and goes through an actual OAuth2 Authorization Code + PKCE exchange -
-# but "logging in" is just reusing whichever real Signon session already
-# authenticated someone to Preview App itself (OauthController#authorize
-# requires that, via ApplicationController's own authenticate_user!), with
-# no separate consent screen - mirroring the same no-consent trust real
-# Signon extends to first-party GOV.UK apps (see its
-# config/initializers/doorkeeper.rb).
+# Currently unused: no previewed app's GDS_SSO_STRATEGY points here (see
+# PreviewEnv's own comment on why) - HostRouter's own, separate
+# `_govuk_preview_access` cookie gate (issue_preview_access_token/
+# uid_for_preview_access_token below) already requires a real Preview App
+# Signon login before any request reaches any preview at all, which was
+# the actual goal. Kept rather than removed, in case per-app identity
+# turns out to be worth the cost of fixing the local networking this
+# needs after all.
 #
 # client_id is simply the previewed app's name (e.g. "whitehall") - there's
 # no need for a registry of per-app OAuth clients, since both sides of this
