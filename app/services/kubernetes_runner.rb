@@ -151,10 +151,13 @@ class KubernetesRunner
     pod = api.get(api.path("v1", "pods"), labelSelector: "app.kubernetes.io/instance=#{deployment}").fetch("items", []).first
     return nil if pod.nil?
 
-    params = { tailLines: tail_lines }
-    # Same pod as "web" - only the container differs.
-    params[:container] = "worker" if component == "worker" && !separate_worker_pod
-    api.get_text(api.path("v1", "pods", pod.dig("metadata", "name"), "log"), params)
+    # Every pod_spec container is named explicitly ("app" or "worker",
+    # see #container) - naming it here is only ever strictly required for
+    # a worker-in-web-pod app's web pod, which has both and leaves
+    # Kubernetes nothing to default to, but it's never wrong to also name
+    # it for a pod that happens to only have the one.
+    container = component == "worker" && !separate_worker_pod ? "worker" : "app"
+    api.get_text(api.path("v1", "pods", pod.dig("metadata", "name"), "log"), tailLines: tail_lines, container: container)
   rescue KubernetesApi::Error => e
     "(couldn't read logs: #{e.message})"
   end
