@@ -35,18 +35,15 @@
 #   no port only matches the scheme's default one, and previews are on
 #   :8080.) Frontend sets its policy in an initializer of its own, which
 #   runs before this one.
-# - gds-sso apps also validate *API* bearer tokens for real under
-#   GDS_SSO_STRATEGY=real (PreviewEnv sets this on every app, for
-#   HostRouter's benefit - see its own comment) - by calling back to this
-#   same PreviewSignon-backed /user.json, which only ever recognises a
-#   token issued through its own OAuth2 exchange. So a server-to-server
-#   call between two previews with any other bearer token (e.g.
-#   Whitehall's own, calling Publishing API's API) gets rejected, even
-#   though that call never goes near HostRouter or the internet at all -
-#   it's cluster-internal, already walled off by NetworkPolicy. Forcing
-#   Warden::OAuth2 back to gds-sso's own mock token model (accepts any
-#   token as a trusted dummy API user) restores that, independently of
-#   the real strategy still gating actual browser logins.
+# - Warden::OAuth2's token_model governs API bearer-token calls between
+#   previews (e.g. Whitehall's own, calling Publishing API's API) -
+#   forcing it to gds-sso's own mock model (accepts any token as a
+#   trusted dummy API user) keeps those working regardless of whatever
+#   GDS_SSO_STRATEGY resolves to for any given app (PreviewEnv currently
+#   sets "mock" on every one, which already implies this on its own -
+#   but a previewed app's own gds-sso strategy and its API bearer-token
+#   handling aren't actually tied together, so this stays explicit
+#   rather than relying on that happening to line up).
 # - that same mock token model's one dummy API user (gds-sso's
 #   GDS::SSO::MockBearerToken) is found-or-created by a plain, unindexed
 #   email lookup, with no protection against two concurrent first-ever API
