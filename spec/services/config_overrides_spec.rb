@@ -44,5 +44,16 @@ RSpec.describe ConfigOverrides do
     ensure
       Warden::OAuth2.config.token_model = GDS::SSO::MockBearerToken
     end
+
+    it "grants the mock dummy API user a permission to manage any asset, not just ones it's literally the same row as" do
+      snippet = described_class.content.lines.drop_while { |line| !line.include?("GDS::SSO::Config)") }.join
+      original = GDS::SSO::Config.additional_mock_permissions_required
+
+      eval(snippet) # rubocop:disable Security/Eval
+
+      expect(GDS::SSO::Config.additional_mock_permissions_required).to include("Manage all Assets")
+    ensure
+      GDS::SSO::Config.additional_mock_permissions_required = original
+    end
   end
 end
